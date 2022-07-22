@@ -1,0 +1,21 @@
+[package]
+name = "leasesharing"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libp2p = {version = "0.44.0" , features = ["mdns", "tcp-tokio", "serde"]}
+futures = "*"
+libp2p-gossipsub = "*"
+async-std = { version = "*", features = ["attributes","tokio1"] }
+libp2p-noise = "*"
+tokio = { version = "1.9", features = ["full"] }
+async-trait = "*"
+clap = {version = "3.1.6", features = ["derive"]}
+serde = {version = "*", features =["derive"] }
+serde_json = "*"
+void = "*"
+rand = "*"
+libmath = "0.2.1"

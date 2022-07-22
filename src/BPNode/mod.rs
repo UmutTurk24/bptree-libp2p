@@ -81,18 +81,18 @@ impl Block{
         }
     }
     /// Insert an Key/Entry pair to the block 
-    pub fn insert_entry(&mut self, new_key: Key, entry: Entry) -> InsertResult {
+    pub fn insert_entry(&mut self, new_key: Key, entry: Entry) -> LeafInsertResult {
 
             let mut key_index: usize = 0; 
 
             if self.keys.is_empty() {
                 self.keys.push(new_key);
                 self.values.push(entry);
-                return InsertResult::Completed();
+                return LeafInsertResult::Completed();
             }
 
             if self.keys.len() > BLOCK_SIZE.into() {
-                return InsertResult::SplitRequest();
+                return LeafInsertResult::SplitRequest(entry);
             }
 
             for index in 0..self.keys.len() {
@@ -105,38 +105,8 @@ impl Block{
 
             self.values.insert(key_index, entry);
             self.keys.insert(key_index, new_key);
-            return InsertResult::Completed();
+            return LeafInsertResult::Completed();
     }
-
-    pub fn insert_shallow_entry(&mut self, new_key: Key, incoming_client_id: PeerId) -> InsertResult {
-
-        let empty_data: Data = Data{ data: "".to_string(), };
-        let placeholder_entry: Entry = Entry { owner: incoming_client_id, data: empty_data };
-
-        let mut key_index: usize = 0; 
-
-        if self.keys.is_empty() {
-            self.keys.push(new_key);
-            self.values.push(placeholder_entry);
-            return InsertResult::Completed();
-        }
-
-        if self.keys.len() > BLOCK_SIZE.into() {
-            return InsertResult::SplitRequest();
-        }
-
-        for index in 0..self.keys.len() {
-            let cur_key = self.keys[index];
-            if new_key >= cur_key {
-                key_index = index;
-                break;
-            }
-        }
-
-        self.values.insert(key_index, placeholder_entry);
-        self.keys.insert(key_index, new_key);
-        return InsertResult::Completed();
-}
 
     pub fn split_leaf_block(&mut self) -> (Block, Key) {
         let mut new_block = Block::new();
@@ -193,7 +163,7 @@ impl Block{
         self.children.push(new_block_id);
     }
 
-    pub fn insert_child(&mut self, new_key: Key, child_id: BlockId) -> InsertResult {
+    pub fn insert_child(&mut self, new_key: Key, child_id: BlockId) -> InternalInsertResult {
         let mut key_index: usize = 0;
 
         // There will never be a case where this method is called on an empty inside block.
@@ -201,7 +171,7 @@ impl Block{
 
         // Check if the block is full
         if self.keys.len() > BLOCK_SIZE.into() {
-            return InsertResult::SplitRequest();
+            return InternalInsertResult::SplitRequest();
         }
         
         // 
@@ -215,7 +185,7 @@ impl Block{
 
         self.children.insert(key_index + 1, child_id); // +1 bc by default there is a key in the first index already
         self.keys.insert(key_index, new_key);
-        return InsertResult::Completed(); 
+        return InternalInsertResult::Completed(); 
     }
 
     pub fn split_internal_block(&mut self) -> (Block, u64) {
@@ -265,18 +235,12 @@ impl Block{
         }
     }
 
-    
-
     // pub fn check_ids(&mut self, entry: Entry, index: u8) -> bool {
     //     if entry.owner == self.values.get(index) {
 
     //     }
     //     false
     // }    
-
-    
-
-
 
     pub fn search(&mut self, hashed_data: u64) -> SearchResult {
         let index = self.keys.iter().position(|&index| index == hashed_data);
@@ -472,10 +436,16 @@ pub enum LocalSearchResult {
     LeafBlock(BlockId),
     RemoteBlock(BlockId),
 }
-pub enum InsertResult {
+pub enum LeafInsertResult {
+    Completed(),
+    SplitRequest(Entry),
+}
+
+pub enum InternalInsertResult {
     Completed(),
     SplitRequest(),
 }
+
 
 #[derive(Debug,Serialize,Deserialize,Clone)]
 pub enum SearchResult{
@@ -489,11 +459,27 @@ pub struct Entry{ //
     data: Data,
 }
 
+impl Entry {
+    pub fn new (peer_id: PeerId, data: Data) -> Self {
+        return Self { 
+            owner: peer_id, 
+            data: data,
+        }
+    }
+    pub fn shallow_new (peer_id: PeerId) -> Self {
+        let empty_data: Data = Data{ data: "".to_string(), };
+        return Self { 
+            owner: peer_id, 
+            data: empty_data,
+        }
+    }
+}
+
 
 
 #[derive(Debug,Serialize,Deserialize,Clone)]
 pub struct Data {
-    data: String,
+    pub data: String,
 }
 
 pub type BlockId = u64;

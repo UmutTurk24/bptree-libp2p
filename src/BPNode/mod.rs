@@ -209,74 +209,6 @@ impl Block{
         }
         (new_block, divider_key)
     }
-
-    // fn get_key_value(&self, key: &Key) -> (&Key, &Entry){
-    //     let Some(index) = self.keys.iter().position(|&index| index == *key);
-    //     (&self.keys[index], &self.values[index])
-
-    // }
-
-    /*
-
-    pub fn get_key_entry(&self, index: Index) -> (Key, Entry) {
-        let value = self.values[index as usize].clone();
-        let key = self.keys[index as usize];
-        (key,value)
-    }
-
-
-    pub fn replace_lease_entry(&mut self, key: Key, new_entry: Entry) -> bool {
-        let index = self.keys.iter().position(|&index| index == key);
-        if let Some(index) = index {
-            self.values[index] = new_entry;
-            true
-        } else {
-            false
-        }
-    }
-
-    // pub fn check_ids(&mut self, entry: Entry, index: u8) -> bool {
-    //     if entry.owner == self.values.get(index) {
-
-    //     }
-    //     false
-    // }    
-
-    pub fn search(&mut self, hashed_data: u64) -> SearchResult {
-        let index = self.keys.iter().position(|&index| index == hashed_data);
-        match index {
-            Some(index) => {
-                if self.children.is_empty() {
-                    let value = self.values[index].clone();
-                    SearchResult::Entry(value)
-                }
-                else {
-                    let block_id = self.children[index+1];
-                    SearchResult::BlockId(block_id)
-                }
-            },
-            None => {
-                return SearchResult::SearchError("Could not find the index".to_string());
-            },
-        }
-    }
-
-    pub fn key_generator() -> u64 {
-        let mut rng = rand::thread_rng();
-        let num: u64 = rng.gen();
-        return num
-    }
-
-    pub fn has_children(self) -> bool{
-        if self.children.len() == 0 {
-            false
-        } else {
-            true
-        }
-    }
-
- */
-
     
 
 }
@@ -303,36 +235,11 @@ impl BlockMap {
         }
     }
 
-    pub fn local_search(&self, key: &Key,) -> LocalSearchResult {
+    pub fn local_search(&self, key: &Key, current_block_id: BlockId) -> LocalSearchResult {
 
         // Start the local search from the root
-        let mut current_block = self.map.get(&self.root_id).unwrap();
-
-        // Continue searching until the block is in another client
-        // or a leaf block is reached
-        loop {
-            let search_result = current_block.search_key(key);
-
-            match search_result {
-                SearchResult::LeafBlock(leaf_block_id) => {
-                    return LocalSearchResult::LeafBlock(leaf_block_id);
-                },
-                SearchResult::NextBlock(next_block_id) => {
-                    let is_local = self.map.get(&next_block_id);
-
-                    if let Some(local_block) = is_local {
-                        current_block = local_block;
-                    } else {
-                        return LocalSearchResult::RemoteBlock(next_block_id);
-                    }
-                },
-            }
-        }
-    }
-
-    pub fn continue_local_search(&self, key: &Key, current_block_id: BlockId) -> LocalSearchResult {
-
         let mut current_block = self.map.get(&current_block_id).unwrap();
+
         // Continue searching until the block is in another client
         // or a leaf block is reached
         loop {
@@ -355,7 +262,7 @@ impl BlockMap {
         }
     }
 
-    fn get_root_id(&self) -> BlockId {
+    pub fn get_root_id(&self) -> BlockId {
         self.root_id
     }
 
@@ -370,65 +277,7 @@ impl BlockMap {
     pub fn insert(&mut self, block: Block) {
         self.map.insert(block.get_block_id(), block);
     }
-
     
-
-    // pub fn push(&mut self, block_id: BlockId, block: Block ) -> usize {
-    //     self.keys.push(block_id);
-    //     self.values.push(block);
-    //     self.keys.len()-1
-    // }
-
-    // fn index_insert(&mut self, block_id: BlockId, block: Block, index: Index ) {
-    //     self.keys.insert(index.into(), block_id);
-    //     self.values.insert(index.into(), block);
-    // }
-
-    // pub fn get_block(&mut self, block_id: BlockId) -> FindBlock{
-    //     let index = self.keys.iter().position(|&index| index == block_id);
-        
-    //     if let Some(index) = index {
-    //         let removed_block = self.remove(index.try_into().unwrap());
-    //         match removed_block {
-    //             RemoveBlock::BlockInfo(block, id, index) => {
-    //                 FindBlock::Block(block, id, index)
-    //             },
-    //             RemoveBlock::RemoveBlockError(err) => {
-    //                 return FindBlock::GetBlockError(err)
-    //             },
-    //         }
-            
-    //     } else {
-    //         FindBlock::GetBlockError("Could not find the block".to_string())
-    //     }
-    // }
-
-    // fn remove(&mut self, block_id: BlockId) -> RemoveBlock{
-    //     let index = self.keys.iter().position(|&index| index == block_id);
-    //     if let Some(index) = index {
-    //         let id = self.keys.remove(index);
-    //         let block = self.values.remove(index);
-    //         RemoveBlock::BlockInfo(block, id, index.try_into().unwrap())
-    //     } else {
-    //         RemoveBlock::RemoveBlockError("Could not find the block".to_string())
-    //     }
-    // }
-
-    // pub fn get_last_block(&mut self) -> AvailableBlock{
-    //     let last_block = self.values.pop();
-    //     let last_key = self.keys.pop();
-
-    //     if let (Some(last_block),Some(last_key)) = (last_block, last_key) {
-    //         AvailableBlock::BlockInfo(last_block, last_key)
-    //     } else {
-    //         AvailableBlock::AvailableBlockError("Could not get the last block".to_string())
-    //     }
-    // }
-
-    // pub fn return_last_block(&mut self, block_id: BlockId, block: Block) {
-    //     self.values.push(block);
-    //     self.keys.push(block_id);
-    // }
 }
 
 

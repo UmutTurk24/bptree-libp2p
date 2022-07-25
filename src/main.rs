@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         
                         let root_response = futures::future::select_ok(requests)
                             .await
-                            .unwrap()
+                            .map_err(|_| "None of the providers returned.")?
                             .0;
 
                         let lease_response: LeaseResponse = serde_json::from_str(&root_response).unwrap();
@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                         let responses = futures::future::select_ok(requests)
                                             .await
-                                            .unwrap()
+                                            .map_err(|_| "None of the providers returned.")?
                                             .0;
                                         
                                         let remote_search_response: LeaseResponse = serde_json::from_str(&responses).unwrap();
@@ -514,7 +514,7 @@ mod network {
                                     // As long as there is a response, continue
                                     let _response = futures::future::select_ok(update_parent_requests)
                                         .await
-                                        .unwrap()
+                                        .map_err(|_| "None of the providers returned.")?
                                         .0;
                                     
                                     let lease_response = LeaseResponse::LeaseSuccess;
@@ -591,7 +591,7 @@ mod network {
                                     // As long as there is a response, continue
                                     let _response = futures::future::select_ok(update_parent_requests)
                                         .await
-                                        .unwrap()
+                                        .map_err(|_| "None of the providers returned.")?
                                         .0;
                                     
                                     let lease_response = LeaseResponse::LeaseSuccess;
@@ -665,7 +665,7 @@ mod network {
                         // As long as there is a response, continue
                         let _response = futures::future::select_ok(update_parent_requests)
                             .await
-                            .unwrap()
+                            .map_err(|_| "None of the providers returned.")?
                             .0;
                         
                         let insertion_response = InsertionResponse::InsertSuccess;

@@ -451,7 +451,7 @@ mod network {
         //     receiver.await.expect("Sender not to be dropped.");
         // }
 
-        pub async fn handle_request_lease(&mut self, _requester_id: PeerId, requested_key: Key, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) {
+        pub async fn handle_request_lease(&mut self, _requester_id: PeerId, requested_key: Key, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
             
             // Each root takes the requests for initializing a search in the map. Therefore the search needs to 
             // start from the root node of the block_map
@@ -468,6 +468,7 @@ mod network {
                                 let lease_response = LeaseResponse::LeaseSuccess;
                                 let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                 self.respond_lease(serialized_response, channel).await; // there is no need to await. Find a way to just respond w the lease
+                                Ok(())
                             },
                             BPNode::LeafInsertResult::SplitRequest(entry) => {
                                 let (mut new_block, divider_key) = leaf_block.split_leaf_block();
@@ -492,6 +493,7 @@ mod network {
                                     let lease_response = LeaseResponse::LeaseSuccess;
                                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                     self.respond_lease(serialized_response, channel).await;
+                                    Ok(())
                                 }
                                 else {
                                     // Send a request to the parent block for inserting key/child pair
@@ -503,6 +505,7 @@ mod network {
                                         let lease_response = LeaseResponse::LeaseFail;
                                         let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                         self.respond_lease(serialized_response, channel).await;
+                                        Ok(())
                                     } else {
                                         // Update the parent's block
                                     let update_parent_requests = providers.into_iter().map(|peer_id| {
@@ -520,6 +523,7 @@ mod network {
                                     let lease_response = LeaseResponse::LeaseSuccess;
                                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                     self.respond_lease(serialized_response, channel).await;
+                                    Ok(())
                                     }
                                 }
                             },
@@ -529,11 +533,12 @@ mod network {
                         let lease_response = LeaseResponse::LeaseContinuation(remote_block_id);
                         let serialized_response = serde_json::to_string(&lease_response).unwrap();
                         self.respond_lease(serialized_response, channel).await;
+                        Ok(())
                     },
                 }
         }
 
-        pub async fn handle_request_remote_lease_search(&mut self, _requester_id: PeerId, requested_key: Key, current_block_id: BlockId, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) {
+        pub async fn handle_request_remote_lease_search(&mut self, _requester_id: PeerId, requested_key: Key, current_block_id: BlockId, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
             let search_result = block_map.local_search(&requested_key, current_block_id);
             match search_result {
                 // Found a local leaf block
@@ -546,6 +551,7 @@ mod network {
                             let lease_response = LeaseResponse::LeaseSuccess;
                             let serialized_response = serde_json::to_string(&lease_response).unwrap();
                             self.respond_lease(serialized_response, channel).await; // there is no need to await. Find a way to just respond w the lease
+                            Ok(())
                         },
                         BPNode::LeafInsertResult::SplitRequest(entry) => {
                             let (mut new_block, divider_key) = leaf_block.split_leaf_block();
@@ -570,6 +576,7 @@ mod network {
                                 let lease_response = LeaseResponse::LeaseSuccess;
                                 let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                 self.respond_lease(serialized_response, channel).await;
+                                Ok(())
                             }
                             else {
                                 // Send a request to the parent block for inserting key/child pair
@@ -581,6 +588,7 @@ mod network {
                                     let lease_response = LeaseResponse::LeaseFail;
                                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                     self.respond_lease(serialized_response, channel).await;
+                                    Ok(())
                                 } else {
                                     let update_parent_requests = providers.into_iter().map(|peer_id| {
                                         let mut network_client = self.clone();
@@ -597,6 +605,7 @@ mod network {
                                     let lease_response = LeaseResponse::LeaseSuccess;
                                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
                                     self.respond_lease(serialized_response, channel).await;
+                                    Ok(())
                                 }                                
                             }
                         },
@@ -606,11 +615,12 @@ mod network {
                     let lease_response = LeaseResponse::LeaseContinuation(remote_block_id);
                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
                     self.respond_lease(serialized_response, channel).await;
+                    Ok(())
                 },
             }
         }
     
-        pub async fn handle_request_update_parent(&mut self, divider_key: Key, new_block_id: BlockId, parent_id: BlockId, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) {
+        pub async fn handle_request_update_parent(&mut self, divider_key: Key, new_block_id: BlockId, parent_id: BlockId, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>)-> Result<(), Box<dyn Error>> {
             let parent_block = block_map.get_mut_block(parent_id);
             let insert_result = parent_block.insert_child(divider_key, new_block_id);
             
@@ -619,6 +629,7 @@ mod network {
                     let insertion_response = InsertionResponse::InsertSuccess;
                     let serialized_response = serde_json::to_string(&insertion_response).unwrap();
                     self.respond_update_parent(serialized_response, channel).await; // there is no need to await. Find a way to just respond w the lease
+                    Ok(())
                 },
                 BPNode::InternalInsertResult::SplitRequest() => {
                     let (mut new_block, new_divider_key) = parent_block.split_internal_block();
@@ -643,6 +654,7 @@ mod network {
                         let insertion_response = InsertionResponse::InsertSuccess;
                         let serialized_response = serde_json::to_string(&insertion_response).unwrap();
                         self.respond_update_parent(serialized_response, channel).await; // there is no need to await. Find a way to just respond w the lease
+                        Ok(())
                     }
                     else {
                         // Send a request to the parent block for inserting key/child pair
@@ -654,6 +666,7 @@ mod network {
                             let insertion_response = InsertionResponse::InsertFail;
                             let serialized_response = serde_json::to_string(&insertion_response).unwrap();
                             self.respond_update_parent(serialized_response, channel).await;
+                            Ok(())
                         } else {
                             // Update the parent's block
                         let update_parent_requests = providers.into_iter().map(|peer_id| {
@@ -671,6 +684,7 @@ mod network {
                         let insertion_response = InsertionResponse::InsertSuccess;
                         let serialized_response = serde_json::to_string(&insertion_response).unwrap();
                         self.respond_update_parent(serialized_response, channel).await; // there is no need to await. Find a way to just respond w the lease
+                        Ok(())
                         }
                     }
                 },

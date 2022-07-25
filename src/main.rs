@@ -1,10 +1,12 @@
 use clap::Parser;
+use rand::Rng;
 use serde::{Serialize, Deserialize};
 use tokio::spawn;
 use tokio::io::AsyncBufReadExt;
 use futures::prelude::*;
 use libp2p::core::{Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
+use std::collections::HashMap;
 use std::error::Error;
 use void;
 // run with cargo run -- --secret-key-seed #
@@ -63,9 +65,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
     let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
-    let mut block_map = BlockMap::boot_new(&network_client_id);
 
-    
+    let mut number_generator = rand::thread_rng();
+    let mut block_map = BlockMap::boot_new(&network_client_id);
+    let mut lease_map: HashMap<Key,Entry> = HashMap::new();
     
     loop {
         tokio::select! { 
@@ -75,7 +78,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match line.as_str() {
                         // "getlease" => list_peers().await,
                         "getlease" => {
+                            let random_key: u64 = number_generator.gen();
                             let providers = network_client.get_root_providers().await;
+
+                            
 
                             if providers.is_empty() {
                                 return Err(format!("Could not find provider for leases.").into());
@@ -83,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let requests = providers.into_iter().map(|provider_id| {
                                 let mut network_client = network_client.clone();
                                 let placeholder_entry = Entry::shallow_new(network_client_id);
-                                async move { network_client.request_lease(provider_id, 64, network_client_id, placeholder_entry).await }.boxed()
+                                async move { network_client.request_lease(provider_id, random_key, network_client_id, placeholder_entry).await }.boxed()
                             });
                         
                         println!("{:?}", requests);
@@ -95,11 +101,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let lease_response: LeaseResponse = serde_json::from_str(&root_response).unwrap();
                         
-                        
                         match lease_response{
-                                LeaseResponse::LeaseSuccess => todo!(),
-                                LeaseResponse::LeaseContinuation(_) => todo!(),
-                                LeaseResponse::LeaseFail => todo!(),
+                                LeaseResponse::LeaseSuccess => {
+                                    let placeholder_entry = Entry::shallow_new(network_client_id);
+                                    lease_map.insert(random_key,placeholder_entry);
+                                    println!("Lease was inserted successfully!");
+                                },
+                                LeaseResponse::LeaseContinuation(mut next_block_id) => {
+                                    // CODE WON'T REACH HERE YET
+                                    // RIGHT NOW THIS WON'T WORK BECAUSE NEW BLOCKS ARE NOT BEING ADDED TO KADEMLIA
+                                    // NO SET PROVIDER
+
+                                    loop {
+                                        let providers = network_client.get_providers(next_block_id.to_string()).await;
+
+                                        let requests = providers.into_iter().map(|provider_id| {
+                                            let mut network_client = network_client.clone();
+                                            let placeholder_entry = Entry::shallow_new(network_client_id);
+                                            async move { network_client.request_remote_lease_search(provider_id, random_key, network_client_id, placeholder_entry, next_block_id).await }.boxed()
+                                        });
+
+                                        let responses = futures::future::select_ok(requests)
+                                            .await
+                                            .unwrap()
+                                            .0;
+                                        
+                                        let remote_search_response: LeaseResponse = serde_json::from_str(&responses).unwrap();
+
+                                        match remote_search_response{
+                                            LeaseResponse::LeaseSuccess => {
+                                                let placeholder_entry = Entry::shallow_new(network_client_id);
+                                                lease_map.insert(random_key,placeholder_entry);
+                                                println!("Lease was inserted successfully!");
+                                            },
+                                            LeaseResponse::LeaseContinuation(new_next_block_id) => { next_block_id = new_next_block_id},
+                                            LeaseResponse::LeaseFail => {println!("Something went wrong, try again")},
+                                        }
+                                    }
+                                },
+                                LeaseResponse::LeaseFail => {println!("Something went wrong, try again")},
                             }
                         },
                         "root" => {
@@ -332,6 +372,22 @@ mod network {
             receiver.await.expect("Sender not be dropped.")
         }
 
+        pub async fn request_remote_lease_search(&mut self, provider_id: PeerId, key: Key, requester_id: PeerId, entry: Entry, block_id: BlockId) -> Result<String, Box<dyn Error + Send>> {
+            let (sender, receiver) = oneshot::channel();
+            self.sender
+                .send(Command::RequestRemoteLeaseSearch {
+                    provider_id,
+                    sender,
+                    key,
+                    requester_id,
+                    entry,
+                    block_id,
+                })
+                .await
+                .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not be dropped.")
+        }
+
         pub async fn request_update_parent(&mut self, provider_id: PeerId, divider_key: Key, new_block_id: BlockId, parent_id: BlockId) -> Result<String, Box<dyn Error + Send>> {
             let (sender, receiver) = oneshot::channel();
             self.sender
@@ -363,19 +419,19 @@ mod network {
                 .expect("Command receiver not to be dropped.");
         }
 
-        pub async fn respond_split_block(&mut self, block_data: String,  channel: ResponseChannel<GenericResponse>) {
-            self.sender
-                .send(Command::RespondSplitBlock { block_data, channel })
-                .await
-                .expect("Command receiver not to be dropped.");
-        }
+        // pub async fn respond_split_block(&mut self, block_data: String,  channel: ResponseChannel<GenericResponse>) {
+        //     self.sender
+        //         .send(Command::RespondSplitBlock { block_data, channel })
+        //         .await
+        //         .expect("Command receiver not to be dropped.");
+        // }
 
-        pub async fn respond_lease_change(&mut self, lease_change: String, channel: ResponseChannel<GenericResponse>) {
-            self.sender
-                .send(Command::RespondLeaseChange { lease_change,  channel })
-                .await
-                .expect("Command receiver not to be dropped.");
-        }
+        // pub async fn respond_lease_change(&mut self, lease_change: String, channel: ResponseChannel<GenericResponse>) {
+        //     self.sender
+        //         .send(Command::RespondLeaseChange { lease_change,  channel })
+        //         .await
+        //         .expect("Command receiver not to be dropped.");
+        // }
 
         pub async fn boot_root(&mut self) {
             let (sender, receiver) = oneshot::channel();
@@ -386,14 +442,14 @@ mod network {
             receiver.await.expect("Sender not to be dropped.");
         }
 
-        pub async fn set_block_provider(&mut self, block_id: BlockId) {
-            let (sender, receiver) = oneshot::channel();
-            self.sender
-                .send(Command::StartProviding { network_alias: block_id.to_string(), sender })
-                .await
-                .expect("Command receiver not to be dropped.");
-            receiver.await.expect("Sender not to be dropped.");
-        }
+        // pub async fn set_block_provider(&mut self, block_id: BlockId) {
+        //     let (sender, receiver) = oneshot::channel();
+        //     self.sender
+        //         .send(Command::StartProviding { network_alias: block_id.to_string(), sender })
+        //         .await
+        //         .expect("Command receiver not to be dropped.");
+        //     receiver.await.expect("Sender not to be dropped.");
+        // }
 
         pub async fn handle_request_lease(&mut self, _requester_id: PeerId, requested_key: Key, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) {
             
@@ -628,7 +684,7 @@ mod network {
         command_receiver: mpsc::Receiver<Command>,
         event_sender: mpsc::Sender<Event>,
         pending_dial: HashMap<PeerId, oneshot::Sender<Result<(), Box<dyn Error + Send>>>>,
-        pending_start_providing: HashMap<QueryId, oneshot::Sender<()>>,
+        // pending_start_providing: HashMap<QueryId, oneshot::Sender<()>>,
         pending_get_providers: HashMap<QueryId, oneshot::Sender<HashSet<PeerId>>>,
         // pending_request_file:
         //     HashMap<RequestId, oneshot::Sender<Result<String, Box<dyn Error + Send>>>>,
@@ -636,8 +692,8 @@ mod network {
             HashMap<RequestId, oneshot::Sender<Result<String, Box<dyn Error + Send>>>>,
         pending_begin_root: HashMap<QueryId, oneshot::Sender<()>>,
 
-        pending_request_search_key: 
-            HashMap<RequestId, oneshot::Sender<Result<String, Box<dyn Error + Send>>>>,
+        // pending_request_search_key: 
+        //     HashMap<RequestId, oneshot::Sender<Result<String, Box<dyn Error + Send>>>>,
 
 
     }
@@ -653,12 +709,12 @@ mod network {
                 command_receiver,
                 event_sender,
                 pending_dial: Default::default(),
-                pending_start_providing: Default::default(),
+                // pending_start_providing: Default::default(),
                 pending_get_providers: Default::default(),
                 // pending_request_file: Default::default(),
                 pending_request_lease: Default::default(),
                 pending_begin_root: Default::default(),
-                pending_request_search_key: Default::default(),
+                // pending_request_search_key: Default::default(),
             }
         }
 
@@ -875,21 +931,32 @@ mod network {
                         .expect("Connection to peer to be still open.");
                 }
 
-                Command::RespondSplitBlock {block_data, channel } => { // Add map
+                Command::RequestRemoteLeaseSearch {provider_id, sender, key, requester_id, entry,block_id} => {
+                    let lease_request: IncomingRequest = IncomingRequest::RequestRemoteSearch(requester_id, key, block_id, entry);
+                    let serialize_request =  serde_json::to_string(&lease_request).unwrap();
                     let request_id = self
                         .swarm
                         .behaviour_mut()
                         .request_response
-                        .send_response(channel, GenericResponse(block_data));
+                        .send_request(&provider_id, GenericRequest(serialize_request));
+                    self.pending_request_lease.insert(request_id, sender);
+                }
+
+                // Command::RespondSplitBlock {block_data, channel } => { // Add map
+                //     let request_id = self
+                //         .swarm
+                //         .behaviour_mut()
+                //         .request_response
+                //         .send_response(channel, GenericResponse(block_data));
                     
-                }
-                Command::RespondLeaseChange {lease_change, channel } => { // Done
-                    self.swarm
-                        .behaviour_mut()
-                        .request_response
-                        .send_response(channel, GenericResponse(lease_change))
-                        .expect("Connection to peer to be still open.");
-                }
+                // }
+                // Command::RespondLeaseChange {lease_change, channel } => { // Done
+                //     self.swarm
+                //         .behaviour_mut()
+                //         .request_response
+                //         .send_response(channel, GenericResponse(lease_change))
+                //         .expect("Connection to peer to be still open.");
+                // }
 
                 Command::StartProviding {network_alias, sender} => { // Done
                     let query_id = self
@@ -973,14 +1040,14 @@ mod network {
             lease_response: String,
             channel: ResponseChannel<GenericResponse>,
         },
-        RespondSplitBlock {
-            block_data: String,
-            channel: ResponseChannel<GenericResponse>,
-        },
-        RespondLeaseChange {
-            lease_change: String,
-            channel: ResponseChannel<GenericResponse>,
-        },
+        // RespondSplitBlock {
+        //     block_data: String,
+        //     channel: ResponseChannel<GenericResponse>,
+        // },
+        // RespondLeaseChange {
+        //     lease_change: String,
+        //     channel: ResponseChannel<GenericResponse>,
+        // },
         StartProviding {
             network_alias: String,
             sender: oneshot::Sender<()>,
@@ -996,6 +1063,14 @@ mod network {
         RespondUpdateParent {
             update_parent_respond: String,
             channel: ResponseChannel<GenericResponse>,
+        },
+        RequestRemoteLeaseSearch {
+            provider_id: PeerId,
+            sender: oneshot::Sender<Result<String, Box<dyn Error + Send>>>,
+            key: Key,
+            requester_id: PeerId,
+            entry: Entry,
+            block_id: BlockId,
         }
 
     }

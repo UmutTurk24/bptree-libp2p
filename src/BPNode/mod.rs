@@ -213,7 +213,10 @@ impl Block{
 
 }
 
-
+pub struct BlockMap {
+    map: HashMap<BlockId, Block>,
+    root_id: BlockId,
+}
 
 impl BlockMap {
     pub fn new () -> Self {
@@ -334,7 +337,4 @@ pub struct Data {
 pub type BlockId = u64;
 pub type Key = u64; 
 
-pub struct BlockMap {
-    map: HashMap<BlockId, Block>,
-    root_id: BlockId,
-}
+

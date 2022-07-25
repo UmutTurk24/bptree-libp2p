@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use void;
 // run with cargo run -- --secret-key-seed #
+use tokio::time::{sleep, Duration};
 
 mod BPNode;
 use BPNode::{Block, Key, Entry, BlockId};
@@ -36,9 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Spawn the network task for it to run in the background.
     spawn(network_event_loop.run());
 
-    // In case a listen address was provided use it, otherwise listen on any
-    // address.
-    // match opt.listen_address {
+    // In case a listen address was provided use it, otherwise listen on any address.
     match listen_address{
         Some(addr) => network_client
             .start_listening(addr)
@@ -69,6 +68,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut number_generator = rand::thread_rng();
     let mut block_map = BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<Key,Entry> = HashMap::new();
+
+
+    let block_counter_handle = tokio::spawn(async move {
+        loop {
+            // TODOs:
+            // Update the block_count 
+            block_count = block_count + 1;
+        }
+    });
+
     
     loop {
         tokio::select! { 
@@ -81,15 +90,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let random_key: u64 = number_generator.gen();
                             let providers = network_client.get_root_providers().await;
 
-                            
-
                             if providers.is_empty() {
                                 return Err(format!("Could not find provider for leases.").into());
                             }
                             let requests = providers.into_iter().map(|provider_id| {
                                 let mut network_client = network_client.clone();
                                 let placeholder_entry = Entry::shallow_new(network_client_id);
-                                async move { network_client.request_lease(provider_id, random_key, network_client_id, placeholder_entry).await }.boxed()
+                                tokio::spawn(async move { network_client.request_lease(provider_id, random_key, network_client_id, placeholder_entry).await }.boxed())
                             });
                         
                         println!("{:?}", requests);
@@ -97,7 +104,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let root_response = futures::future::select_ok(requests)
                             .await
                             .map_err(|_| "None of the providers returned.")?
-                            .0;
+                            .0
+                            .unwrap();
 
                         let lease_response: LeaseResponse = serde_json::from_str(&root_response).unwrap();
                         
@@ -118,13 +126,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let requests = providers.into_iter().map(|provider_id| {
                                             let mut network_client = network_client.clone();
                                             let placeholder_entry = Entry::shallow_new(network_client_id);
-                                            async move { network_client.request_remote_lease_search(provider_id, random_key, network_client_id, placeholder_entry, next_block_id).await }.boxed()
+                                            tokio::spawn(async move { network_client.request_remote_lease_search(provider_id, random_key, network_client_id, placeholder_entry, next_block_id).await }.boxed())
                                         });
 
                                         let responses = futures::future::select_ok(requests)
                                             .await
                                             .map_err(|_| "None of the providers returned.")?
-                                            .0;
+                                            .0
+                                            .unwrap();
                                         
                                         let remote_search_response: LeaseResponse = serde_json::from_str(&responses).unwrap();
 
@@ -133,9 +142,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let placeholder_entry = Entry::shallow_new(network_client_id);
                                                 lease_map.insert(random_key,placeholder_entry);
                                                 println!("Lease was inserted successfully!");
+                                                break
                                             },
                                             LeaseResponse::LeaseContinuation(new_next_block_id) => { next_block_id = new_next_block_id},
-                                            LeaseResponse::LeaseFail => {println!("Something went wrong, try again")},
+                                            LeaseResponse::LeaseFail => {println!("Something went wrong, try again"); break},
                                         }
                                     }
                                 },
@@ -144,6 +154,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         },
                         "root" => {
                             network_client.boot_root().await; // to be found in the network with the name "root"
+
+
+                            // SPAWN A THREAD FOR CHECKING WHO HAS THE LOWEST NUMBER OF BLOCKS
+                            // AND MIGRATE BLOCKS TO THAT NODE
+
+                            // spawn a thread for checking which closest peer has the lowest number of blocks
+                            // tokio::spawn(async {
+                            // });
+
+
                         }
                         _ => print!("unknown command\n"),
                     }
@@ -161,13 +181,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         match deserealized_request {
                             IncomingRequest::RequestLease(requester_id, requested_key, entry) => {
-                                network_client.handle_request_lease(requester_id, requested_key, entry, &mut block_map, channel).await;
+                                network_client.handle_request_lease(requester_id, requested_key, entry, &mut block_map, channel).await?;
                             },
                             IncomingRequest::RequestUpdateParent(divider_key, new_block_id, parent_id) => {
-                                network_client.handle_request_update_parent(divider_key, new_block_id, parent_id, &mut block_map, channel).await;
+                                network_client.handle_request_update_parent(divider_key, new_block_id, parent_id, &mut block_map, channel).await?;
                             },
                             IncomingRequest::RequestRemoteSearch(requester_id, requested_key, block_id, entry) => {
-                                network_client.handle_request_remote_lease_search(requester_id, requested_key, block_id, entry, &mut block_map, channel).await;
+                                network_client.handle_request_remote_lease_search(requester_id, requested_key, block_id, entry, &mut block_map, channel).await?;
+                               
                             },
                         }
 
@@ -482,12 +503,17 @@ mod network {
                                     parent_block.create_new_parent(leaf_block, &divider_key, &mut new_block);
                                     
                                     block_map.update_root(parent_block.get_block_id());
+
+
+
+
                                     ////////////////////////////////////////
                                     // IMPLEMENT LOAD BALANCING HERE
                                     // IF TOO MANY BLOKCS ARE IN THE MAP
                                     // SEND THE BLOCK TO THE CLOSEST NODE
                                     /////////////////////////////////////////
                                     block_map.insert(new_block);
+
                                     block_map.insert(parent_block);
 
                                     let lease_response = LeaseResponse::LeaseSuccess;
@@ -511,14 +537,15 @@ mod network {
                                     let update_parent_requests = providers.into_iter().map(|peer_id| {
                                         let mut network_client = self.clone();
                                         let new_block_id = new_block.get_block_id();
-                                        async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed()
+                                        tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
                                     });
 
                                     // As long as there is a response, continue
                                     let _response = futures::future::select_ok(update_parent_requests)
                                         .await
                                         .map_err(|_| "None of the providers returned.")?
-                                        .0;
+                                        .0
+                                        .unwrap();
                                     
                                     let lease_response = LeaseResponse::LeaseSuccess;
                                     let serialized_response = serde_json::to_string(&lease_response).unwrap();
@@ -593,7 +620,7 @@ mod network {
                                     let update_parent_requests = providers.into_iter().map(|peer_id| {
                                         let mut network_client = self.clone();
                                         let new_block_id = new_block.get_block_id();
-                                        async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed()
+                                        tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
                                     });
     
                                     // As long as there is a response, continue
@@ -672,7 +699,7 @@ mod network {
                         let update_parent_requests = providers.into_iter().map(|peer_id| {
                             let mut network_client = self.clone();
                             let new_block_id = new_block.get_block_id();
-                            async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed()
+                            tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
                         });
 
                         // As long as there is a response, continue

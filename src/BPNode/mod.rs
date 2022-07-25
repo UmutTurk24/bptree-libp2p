@@ -6,9 +6,6 @@ use std::hash::Hasher;
 use rand::Rng;
 use math::round;
 
-// use crate::network::new;
-// use bounded_vec::BoundedVec;
-
 // Sets the block-size for the Block
 static BLOCK_SIZE: u8 = 11;
 
@@ -77,7 +74,6 @@ impl Block{
 
             let next_block_id = &self.children[key_index];
             return SearchResult::NextBlock(*next_block_id);
-            
         }
     }
     /// Insert an Key/Entry pair to the block 
@@ -219,12 +215,12 @@ pub struct BlockMap {
 }
 
 impl BlockMap {
-    pub fn new () -> Self {
-        return Self { 
-            map: Default::default(), 
-            root_id: Default::default(),
-        }
-    }
+    // pub fn new () -> Self {
+    //     return Self { 
+    //         map: Default::default(), 
+    //         root_id: Default::default(),
+    //     }
+    // }
 
     pub fn boot_new (peer_id: &PeerId) -> Self {
         let mut new_block = Block::new();
@@ -312,12 +308,12 @@ pub struct Entry{ //
 }
 
 impl Entry {
-    pub fn new (peer_id: PeerId, data: Data) -> Self {
-        return Self { 
-            owner: peer_id, 
-            data: data,
-        }
-    }
+    // pub fn new (peer_id: PeerId, data: Data) -> Self {
+    //     return Self { 
+    //         owner: peer_id, 
+    //         data: data,
+    //     }
+    // }
     pub fn shallow_new (peer_id: PeerId) -> Self {
         let empty_data: Data = Data{ data: "".to_string(), };
         return Self { 

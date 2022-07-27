@@ -11,6 +11,7 @@ use std::error::Error;
 use void;
 // run with cargo run -- --secret-key-seed #
 use tokio::time::{sleep, Duration};
+use futures::join;
 
 mod BPNode;
 use BPNode::{Block, Key, Entry, BlockId};
@@ -69,14 +70,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut block_map = BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<Key,Entry> = HashMap::new();
 
+    let mut thread_client = network_client.clone();
+
+    let _block_counter_handle = tokio::spawn(async move { 
+        // thread_client.sub
+    });
+
+    // THREAD SPAWN FOR FINDING THE CLIENT WITH THE LEAST AMOUNT OF BLOCKS
+    /*
+    
+
+    let mut thread_client = network_client.clone();
 
     let block_counter_handle = tokio::spawn(async move {
+        thread_client.start_providing("block_map_counter".to_string()).await;
         loop {
+            sleep(Duration::from_millis(20000)).await;
+            let providers = thread_client.get_providers("block_map_counter".to_string()).await;
+
+            let requests = providers.into_iter().map(|provider_id| {
+                let mut thread_client = thread_client.clone();
+                tokio::spawn(async move { thread_client.request_blockmap_size(provider_id).await }.boxed())
+            });
+
+            // let responses = requests.await.map_err(|_| "None of the providers returned.")?;
+            // join!(requests);
+            // let data = futures::future::select_all(requests).await.0;
+
+            // let mut map_of_sizes: HashMap<String, usize> = HashMap::new();
+            // requests.map(|raw_responses| {
+            //     let responses = raw_responses.await;
+            //     let deserealized_response: (usize, PeerId) = serde_json::from_str(&responses).unwrap();
+            // });
+
+            
+
+            // println!("Item_resolved: {:?}", item_resolved);
+                
             // TODOs:
             // Update the block_count 
-            block_count = block_count + 1;
         }
     });
+
+     */
 
     
     loop {
@@ -190,6 +226,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 network_client.handle_request_remote_lease_search(requester_id, requested_key, block_id, entry, &mut block_map, channel).await?;
                                
                             },
+                            IncomingRequest::RequestBlockmapSize(_requester_id) => {
+                                network_client.handle_request_blockmap_size(&mut block_map, network_client_id, channel).await?;
+                            }
                         }
 
                         // create a "send_block" operation, it should return an identifier (you should also be the new provider)
@@ -209,6 +248,7 @@ enum IncomingRequest {
     RequestLease(PeerId, Key, Entry),
     RequestUpdateParent(Key, BlockId, BlockId),
     RequestRemoteSearch(PeerId, Key, BlockId, Entry),
+    RequestBlockmapSize(PeerId),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -247,7 +287,9 @@ mod network {
     use futures::channel::{mpsc, oneshot};
     use libp2p::core::either::EitherError;
     use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed, ProtocolName};
-    use libp2p::identity;
+    use libp2p::gossipsub::error::GossipsubHandlerError;
+    use libp2p::gossipsub::{GossipsubEvent, MessageAuthenticity, ValidationMode, IdentTopic as Topic, GossipsubMessage, MessageId};
+    use libp2p::{identity, gossipsub};
     use libp2p::identity::ed25519;
     use libp2p::kad::record::store::MemoryStore;
     use libp2p::kad::{GetProvidersOk, Kademlia, KademliaEvent, QueryId, QueryResult};
@@ -260,8 +302,11 @@ mod network {
     use libp2p::swarm::{ConnectionHandlerUpgrErr, SwarmBuilder, SwarmEvent};
     use libp2p::{NetworkBehaviour, Swarm};
     use tokio::io;
+    use std::collections::hash_map::DefaultHasher;
     use std::collections::{HashMap, HashSet};
+    use std::hash::{Hash, Hasher};
     use std::iter;
+
 
     /// Creates the network components, namely:
     ///
@@ -288,10 +333,22 @@ mod network {
         };
         let peer_id = id_keys.public().to_peer_id();
 
+        let message_id_fn = |message: &GossipsubMessage| {
+            let mut s = DefaultHasher::new();
+            message.data.hash(&mut s);
+            MessageId::from(s.finish().to_string())
+        };
+        
+        let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
+            .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
+            .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
+            .message_id_fn(message_id_fn)
+            .build()
+            .expect("Valid config");
         // Build the Swarm, connecting the lower layer transport logic with the
         // higher layer network behaviour logic.
         let swarm = SwarmBuilder::new(
-            libp2p::development_transport(id_keys).await?,
+            libp2p::development_transport(id_keys.clone()).await?,
             ComposedBehaviour {
                 kademlia: Kademlia::new(peer_id, MemoryStore::new(peer_id)),
                 request_response: RequestResponse::new(
@@ -300,6 +357,7 @@ mod network {
                     Default::default(),
                 ),
                 mdns: Mdns::new(MdnsConfig::default()).await?,
+                gossipsub: gossipsub::Gossipsub::new(MessageAuthenticity::Signed(id_keys), gossipsub_config)?,
             },
             peer_id,
         )
@@ -454,6 +512,17 @@ mod network {
         //         .expect("Command receiver not to be dropped.");
         // }
 
+        pub async fn publish_topic(&mut self, topic: String) {
+            let (sender, receiver) = oneshot::channel();
+            let topic = Topic::new(topic);
+            self.sender
+                .send(Command::PublishTopic { topic, sender })
+                .await
+                .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not to be dropped.");
+
+        }
+
         pub async fn boot_root(&mut self) {
             let (sender, receiver) = oneshot::channel();
             self.sender
@@ -463,14 +532,15 @@ mod network {
             receiver.await.expect("Sender not to be dropped.");
         }
 
-        // pub async fn set_block_provider(&mut self, block_id: BlockId) {
-        //     let (sender, receiver) = oneshot::channel();
-        //     self.sender
-        //         .send(Command::StartProviding { network_alias: block_id.to_string(), sender })
-        //         .await
-        //         .expect("Command receiver not to be dropped.");
-        //     receiver.await.expect("Sender not to be dropped.");
-        // }
+        pub async fn start_providing(&mut self, name: String) {
+            let (sender, receiver) = oneshot::channel();
+            self.sender
+                .send(Command::StartProviding { network_alias: name, sender })
+                .await
+                .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not to be dropped.");
+        }
+
 
         pub async fn handle_request_lease(&mut self, _requester_id: PeerId, requested_key: Key, entry: Entry, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
             
@@ -717,6 +787,30 @@ mod network {
                 },
             }
         }
+
+        pub async fn request_blockmap_size(&mut self, provider_id: PeerId) -> Result<String, Box<dyn Error + Send>> {
+            let (sender, receiver) = oneshot::channel();
+            self.sender
+                .send(Command::RequestBlockmapSize {
+                    provider_id,
+                })
+                .await
+                .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not be dropped.")
+        }
+        pub async fn respond_blockmap_size(&mut self, blockmap_size: usize, sender_id: PeerId, channel: ResponseChannel<GenericResponse>) {
+            self.sender
+                .send(Command::RespondBlockmapSize {  blockmap_size, sender_id, channel,   })
+                .await
+                .expect("Command receiver not to be dropped.");
+        }
+
+        pub async fn handle_request_blockmap_size(&mut self, block_map: &mut BlockMap, sender_id: PeerId, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
+            let blockmap_size = block_map.get_size();
+            self.respond_blockmap_size(blockmap_size, sender_id, channel).await;
+            Ok(())
+        }
+
     }
 
 
@@ -762,7 +856,7 @@ mod network {
         pub async fn run(mut self) {
             loop {
                 futures::select! {
-                    event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite.")).await  ,
+                    event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite.")).await,
                     command = self.command_receiver.next() => match command {
                         Some(c) => self.handle_command(c).await,
                         // Command channel closed, thus shutting down the network event loop.
@@ -776,7 +870,7 @@ mod network {
             &mut self,
             event: SwarmEvent<
                 ComposedEvent,
-                EitherError<EitherError<ConnectionHandlerUpgrErr<io::Error>, io::Error>,void::Void>,
+                EitherError<EitherError<EitherError<ConnectionHandlerUpgrErr<io::Error>, io::Error>,void::Void>, GossipsubHandlerError>,
             >,
         ) {
             match event {
@@ -784,9 +878,14 @@ mod network {
                     MdnsEvent::Discovered(discovered_list))) => {
                     for (peer, addr) in discovered_list {
                         self
-                        .swarm.behaviour_mut()
-                        .kademlia
-                        .add_address(&peer, addr);
+                            .swarm.behaviour_mut()
+                            .kademlia
+                            .add_address(&peer, addr);
+                        self
+                            .swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .add_explicit_peer(&peer);
                         println!("added: {:?}", peer);
                     }
                 }
@@ -795,13 +894,28 @@ mod network {
                     for (peer, _addr) in expired_list {
                         if !self.swarm.behaviour_mut().mdns.has_node(&peer) {
                             self
-                            .swarm
-                            .behaviour_mut()
-                            .kademlia
-                            .remove_peer(&peer);
+                                .swarm
+                                .behaviour_mut()
+                                .kademlia
+                                .remove_peer(&peer);
+                            self
+                                .swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .remove_explicit_peer(&peer);
                         }
                     }
                 }
+
+                SwarmEvent::Behaviour(ComposedEvent::Gossipsub(GossipsubEvent::Message {
+                    propagation_source: peer_id,
+                    message_id: id,
+                    message,
+                })) => {
+                    println!("Got message: {} with id: {} from peer: {:?}", String::from_utf8_lossy(&message.data), id, peer_id);
+                    
+                },
+                // SwarmEvent::Behaviour(ComposedEvent::Gossipsub(_)) => {}
                 SwarmEvent::Behaviour(ComposedEvent::Kademlia(
                     KademliaEvent::OutboundQueryCompleted {
                         id,
@@ -853,8 +967,6 @@ mod network {
                             .remove(&request_id)
                             .expect("Request to still be pending.")
                             .send(Ok(response.0));
-                            // don't wrap it in an Ok - or do
-                            // send the whole response
                     }
                 },
                 SwarmEvent::Behaviour(ComposedEvent::RequestResponse(
@@ -963,6 +1075,25 @@ mod network {
                         .send_response(channel, GenericResponse(lease_response))
                         .expect("Connection to peer to be still open.");
                 }
+                Command::RequestBlockmapSize { provider_id } => { // Done
+                    let blockmap_size_request: IncomingRequest = IncomingRequest::RequestBlockmapSize(provider_id);
+                    let serialize_request =  serde_json::to_string(&blockmap_size_request).unwrap();
+                    let request_id = self
+                        .swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_request(&provider_id, GenericRequest(serialize_request));
+                    // self.pending_request_lease.insert(request_id, sender);
+                }
+                Command::RespondBlockmapSize { blockmap_size, sender_id, channel} => {
+                    let blockmap_size_respond = (blockmap_size, sender_id);
+                    let serialize_request =  serde_json::to_string(&blockmap_size_respond).unwrap();
+                    self.swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_response(channel, GenericResponse(serialize_request))
+                        .expect("Connection to peer to be still open.");
+                }
 
                 Command::RespondUpdateParent {update_parent_respond, channel } => { // Done
                     self.swarm
@@ -1008,6 +1139,15 @@ mod network {
                         .expect("No store error.");
                     self.pending_begin_root.insert(query_id,sender);
                 },
+                Command::PublishTopic {topic, sender} => { 
+                    let query_id = self
+                        .swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(topic, "blocks")
+                        .expect("Publishing");
+                    // self.pending_begin_root.insert(query_id,sender);
+                },
                 Command::RequestUpdateParent { provider_id, sender, divider_key, new_block_id, parent_id} => {
                     let update_parent_request: IncomingRequest = IncomingRequest::RequestUpdateParent(divider_key, new_block_id, parent_id);
                     let serialize_request =  serde_json::to_string(&update_parent_request).unwrap();
@@ -1028,6 +1168,7 @@ mod network {
         request_response: RequestResponse<GenericExchangeCodec>,
         kademlia: Kademlia<MemoryStore>,
         mdns: Mdns,
+        gossipsub: gossipsub::Gossipsub,
     }
 
     #[derive(Debug)]
@@ -1035,6 +1176,7 @@ mod network {
         RequestResponse(RequestResponseEvent<GenericRequest, GenericResponse>),
         Kademlia(KademliaEvent),
         Mdns(MdnsEvent),
+        Gossipsub(GossipsubEvent),
     }
 
     impl From<RequestResponseEvent<GenericRequest, GenericResponse>> for ComposedEvent {
@@ -1052,6 +1194,12 @@ mod network {
     impl From<MdnsEvent> for ComposedEvent {
         fn from(event: MdnsEvent) -> Self {
             ComposedEvent::Mdns(event)
+        }
+    }
+
+    impl From<GossipsubEvent> for ComposedEvent {
+        fn from(event: GossipsubEvent) -> Self {
+            ComposedEvent::Gossipsub(event)
         }
     }
 
@@ -1093,7 +1241,18 @@ mod network {
             network_alias: String,
             sender: oneshot::Sender<()>,
         }, 
-
+        PublishTopic {
+            topic: Topic,
+            sender: oneshot::Sender<()>,
+        },
+        RequestBlockmapSize {
+            provider_id: PeerId,
+        },
+        RespondBlockmapSize {
+            blockmap_size: usize,
+            sender_id: PeerId,
+            channel: ResponseChannel<GenericResponse>,
+        },
         RequestUpdateParent {
             provider_id: PeerId,
             sender: oneshot::Sender<Result<String, Box<dyn Error + Send>>>,

@@ -1,3 +1,9 @@
+// Author: Umut Turk
+// B+Tree implementation for Rust
+// Designed to fit the needs of a distributed Libp2p Networking Lease Sharing
+// Date: Summer 2022
+// Project: Concurrent and Distributed B+Tree for Libp2p
+
 use serde::{Serialize, Deserialize};
 use libp2p::core::PeerId;
 use std::collections::HashMap;
@@ -21,9 +27,7 @@ pub struct Block{
 }
 
 /// Defines the Block traits for the application level
-/// 
-/// Allows creation and splitting a Block
-
+/// Allows creating, searching, and splitting a Block
 impl Block{
     pub fn new () -> Self {
         return Self { 
@@ -37,7 +41,9 @@ impl Block{
         }
     }
     /// Gets the peer_id of the client, serializes it with json, hashes the serialization, and then
-    /// returns an u64 that is used as the block_id
+    /// assigns the newly created id as the block_id
+    /// 
+    /// Returns an u64 that is used as the block_id
     pub fn set_block_id(&mut self, peer_id: &PeerId) -> BlockId {
         let mut hasher = DefaultHasher::new();
         let serialized_id = serde_json::to_string(&peer_id).unwrap();
@@ -51,9 +57,9 @@ impl Block{
         self.block_id
     }
 
-    /// Searches for the block the key is in. Returns: 
-    /// block_id of the current block if the current block is a leaf block
-    /// Or, block_id of the next_block that needs to be searched
+    /// Searches for the block the new_key is in. Returns SearchResult: 
+    /// - LeafBlock: block_id of the current block if the current block is a leaf block
+    /// - NextBlock: block_id of the next_block that needs to be searched
     pub fn search_key(&self, new_key: &Key) -> SearchResult {
 
         // If a leaf block is reached, return the block
@@ -76,7 +82,10 @@ impl Block{
             return SearchResult::NextBlock(*next_block_id);
         }
     }
-    /// Insert an Key/Entry pair to the block 
+
+    /// Insert an Key/Entry pair to the block. Returns LeafInsertResult
+    /// - SplitRequest(entry): Block reached its limit and needs to split 
+    /// - Completed(): Key/value pair is inserted successfully
     pub fn insert_entry(&mut self, new_key: Key, entry: Entry) -> LeafInsertResult {
 
             let mut key_index: usize = 0; 
@@ -104,6 +113,9 @@ impl Block{
             return LeafInsertResult::Completed();
     }
 
+    /// Splits a leaf block. 
+    /// 
+    /// Returns the new block and the divider key
     pub fn split_leaf_block(&mut self) -> (Block, Key) {
         let mut new_block = Block::new();
         new_block.assign_random_id();
@@ -123,6 +135,9 @@ impl Block{
         (new_block, divider_key)
     }
 
+    /// Assigns a random u64 to the block_id
+    /// 
+    /// Returns assigned u64
     pub fn assign_random_id(&mut self) -> u64 {
         let mut rng = rand::thread_rng();
         let num: u64 = rng.gen();
@@ -130,22 +145,33 @@ impl Block{
         num
     }
 
+    /// Returns the block_id of the block that points to the right
+    /// 
+    /// Warning: Should only be used on leaf nodes.
     pub fn get_right_block(&self) -> BlockId{
         self.right_block
     }
 
+    /// Sets the right block to the given right_block_id
     pub fn set_right_block(&mut self, right_block_id: BlockId) {
         self.right_block = right_block_id
     }
 
+
+    /// Returns the block_id of the block that points to its parent
     pub fn get_parent_id(&self) -> BlockId {
         self.parent
     }
 
+    /// Sets the parent block to the given parent_block_id
     pub fn set_parent(&mut self, parent_block_id: BlockId) {
         self.parent = parent_block_id;
     }
-
+    /// Takes in the newly splitted blocks and their divider key as an input 
+    /// 
+    /// Updates the newly created parent block's internal nodes and assigns a block_id
+    /// 
+    /// Also updates the parent pointers of the child nodes 
     pub fn create_new_parent(&mut self, left_block: &mut Block, divider_key: &Key, right_block: &mut Block) {
         let parent_id = self.assign_random_id();
         left_block.set_parent(parent_id);
@@ -153,12 +179,20 @@ impl Block{
         self.insert_on_new_parent(left_block.get_block_id(), *divider_key, right_block.get_block_id());
     }
 
+
+    /// Inserts key/id pairs to the newly created parent
     pub fn insert_on_new_parent(&mut self, old_block_id: BlockId, divider_key: Key, new_block_id: BlockId) {
         self.keys.push(divider_key);
         self.children.push(old_block_id);
         self.children.push(new_block_id);
     }
 
+
+    /// Inserts a key/block_id pair to the internal node
+    /// 
+    /// Returns InternalInsertResult,
+    /// - SplitRequest(): Block reached its limit and needs to split 
+    /// - Completed(): Key/value pair is inserted successfully
     pub fn insert_child(&mut self, new_key: Key, child_id: BlockId) -> InternalInsertResult {
         let mut key_index: usize = 0;
 
@@ -179,11 +213,15 @@ impl Block{
             }
         }
 
-        self.children.insert(key_index + 1, child_id); // +1 bc by default there is a key in the first index already
+        self.children.insert(key_index + 1, child_id); 
         self.keys.insert(key_index, new_key);
         return InternalInsertResult::Completed(); 
     }
 
+
+    /// Splits an internal block. 
+    /// 
+    /// Returns the new block and the divider key
     pub fn split_internal_block(&mut self) -> (Block, u64) {
         let mut new_block = Block::new();
         // self.right_block = new_block.block_id;
@@ -205,23 +243,18 @@ impl Block{
         }
         (new_block, divider_key)
     }
-    
-
 }
 
+/// Defines BlockMap traits for the application level
+/// Allows storing, searching, and retrieving blocks within its hashmap
 pub struct BlockMap {
     map: HashMap<BlockId, Block>,
     root_id: BlockId,
 }
 
 impl BlockMap {
-    // pub fn new () -> Self {
-    //     return Self { 
-    //         map: Default::default(), 
-    //         root_id: Default::default(),
-    //     }
-    // }
 
+    /// Create a new BlockMap with a block
     pub fn boot_new (peer_id: &PeerId) -> Self {
         let mut new_block = Block::new();
         let fresh_id = new_block.set_block_id(peer_id);
@@ -234,8 +267,11 @@ impl BlockMap {
         }
     }
 
-    pub fn local_search(&self, key: &Key, current_block_id: BlockId) -> LocalSearchResult {
 
+    /// Initiates a local block search within the blockmap. Returns LocalSearchResult:
+    /// - LeafBlock: block_id of the leaf node that is being found
+    /// - RemoteBlock: block_id of the next block that key trails to
+    pub fn local_search(&self, key: &Key, current_block_id: BlockId) -> LocalSearchResult {
         // Start the local search from the root
         let mut current_block = self.map.get(&current_block_id).unwrap();
 
@@ -261,24 +297,33 @@ impl BlockMap {
         }
     }
 
+
+    /// Returns the root's block_id 
     pub fn get_root_id(&self) -> BlockId {
         self.root_id
     }
 
+    /// Returns a mutable block from the map with the given block_id
     pub fn get_mut_block(&mut self, block_id: BlockId) -> &mut Block {
         self.map.get_mut(&block_id).unwrap()
     }
 
+
+    /// Assigns a new block_id to the root
     pub fn update_root(&mut self, parent_id: BlockId) {
         self.root_id = parent_id;
     }
 
+    /// Inserts new block_id/block to the map
     pub fn insert(&mut self, block: Block) {
         self.map.insert(block.get_block_id(), block);
     }
-    
-}
 
+    /// Returns the size of the map
+    pub fn get_size(&self) -> usize {
+        self.map.len()
+    }
+}
 
 pub enum LocalSearchResult {
     LeafBlock(BlockId),
@@ -308,12 +353,12 @@ pub struct Entry{ //
 }
 
 impl Entry {
-    // pub fn new (peer_id: PeerId, data: Data) -> Self {
-    //     return Self { 
-    //         owner: peer_id, 
-    //         data: data,
-    //     }
-    // }
+    pub fn new (peer_id: PeerId, data: Data) -> Self {
+        return Self { 
+            owner: peer_id, 
+            data,
+        }
+    }
     pub fn shallow_new (peer_id: PeerId) -> Self {
         let empty_data: Data = Data{ data: "".to_string(), };
         return Self { 

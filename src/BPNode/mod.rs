@@ -368,8 +368,6 @@ impl Entry {
     }
 }
 
-
-
 #[derive(Debug,Serialize,Deserialize,Clone)]
 pub struct Data {
     pub data: String,

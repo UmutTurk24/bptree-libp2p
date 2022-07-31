@@ -11,7 +11,6 @@ use std::error::Error;
 use void;
 // run with cargo run -- --secret-key-seed #
 use tokio::time::{sleep, Duration};
-use futures::join;
 
 mod BPNode;
 use BPNode::{Block, Key, Entry, BlockId};

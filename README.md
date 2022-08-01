@@ -2,6 +2,16 @@
 
 ## Getting started
 
+- In order to run the code, use:
+
+```
+cargo run -- --secret-key-seed #
+```
+
+Insert a different number (#) for each client.
+
+## Project Structure: 
+
 - There is only two files, main.rs and mod.rs under BPNode file. 
 
 ## mod.rs Structure

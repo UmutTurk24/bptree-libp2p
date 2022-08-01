@@ -6,7 +6,7 @@ use tokio::io::AsyncBufReadExt;
 use futures::prelude::*;
 use libp2p::core::{Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use void;
 // run with cargo run -- --secret-key-seed #
@@ -68,12 +68,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut number_generator = rand::thread_rng();
     let mut block_map = BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<Key,Entry> = HashMap::new();    
+    
     let mut network_block_count = 10;
     let mut block_size_buffer = 5;
 
     // THREAD SPAWN FOR FINDING THE CLIENT WITH THE LEAST AMOUNT OF BLOCKS
     /*
-    
 
     let mut thread_client = network_client.clone();
 
@@ -97,8 +97,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             //     let responses = raw_responses.await;
             //     let deserealized_response: (usize, PeerId) = serde_json::from_str(&responses).unwrap();
             // });
-
-            
 
             // println!("Item_resolved: {:?}", item_resolved);
                 
@@ -190,7 +188,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             // SPAWN A THREAD FOR CHECKING WHO HAS THE LOWEST NUMBER OF BLOCKS
                             // AND MIGRATE BLOCKS TO THAT NODE
 
-                            // spawn a thread for checking which closest peer has the lowest number of blocks
                             // tokio::spawn(async {
                             // });
 
@@ -224,7 +221,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 network_client.handle_request_blockmap_size(&mut block_map, network_client_id, channel).await?;
                             }
                             IncomingRequest::RequestBlockMigration(block) => {
-
+                                // Will be implemented after gossipsub
                             }
                         }
 
@@ -274,6 +271,62 @@ struct Opt {
 #[derive(Serialize, Deserialize, Debug)]
 struct FileResponse{
     data: String,
+}
+
+// To be implemented after gossipsub, since it can be only tested with loadbalancing
+
+struct QueueMap {
+    map: HashMap<BlockId,VecDeque<Box<dyn Queueable>>>
+}
+
+impl QueueMap{
+    pub fn new() -> Self{
+        return Self { map: Default::default() }
+    }
+    pub fn add(&mut self, key: BlockId, queue: VecDeque<Box<dyn Queueable>>) {
+        self.map.insert(key, queue);
+    }
+
+    pub fn remove(&mut self, key: BlockId) -> Option<VecDeque<Box<dyn Queueable>>>{
+        self.map.remove(&key)
+    }
+    pub fn update(&mut self, key: BlockId, action: Box<dyn Queueable>) {
+        match self.map.entry(key) 
+        {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                e.get_mut().push_back(action);
+            },
+            std::collections::hash_map::Entry::Vacant(_) => {//Err message
+            },
+        }
+    }
+}
+
+struct QueuedActions {
+    pub queued_actions: VecDeque<Box<dyn Queueable>>,
+}
+
+impl QueuedActions {
+    pub fn run (&self) {
+        for action in self.queued_actions.iter() {
+            action.execute();
+        }
+    }
+    pub fn queue(&mut self, action: Box<dyn Queueable>) {
+        self.queued_actions.push_back(action);
+    }
+
+    pub fn dequeue (&mut self) -> Option<Box<dyn Queueable>> {
+        self.queued_actions.pop_back()
+    }
+}
+
+pub trait Queueable {
+    fn execute (&self);
+}
+//
+struct SearchBlock{
+    block_id: BlockId,
 }
 
 /// The network module, encapsulating all network related logic.
@@ -634,6 +687,10 @@ mod network {
                         self.respond_lease(serialized_response, channel).await;
                         Ok(())
                     },
+                    BPNode::LocalSearchResult::UnavailableBlock(unavailable_block_id) => {
+                        // Will be completed after gossipsub is implemented
+                        Ok(())
+                    }
                 }
         }
 
@@ -717,6 +774,10 @@ mod network {
                     self.respond_lease(serialized_response, channel).await;
                     Ok(())
                 },
+                BPNode::LocalSearchResult::UnavailableBlock(unavailable_block_id) => {
+                    // Will be implemented after gossipsub
+                    Ok(())
+                }
             }
         }
     
@@ -832,7 +893,7 @@ mod network {
         }
 
         pub async fn respond_block_migration(&mut self, block: Block, target_id: PeerId) {
-            
+            // Will be implemented after gossipsub
         }
 
         

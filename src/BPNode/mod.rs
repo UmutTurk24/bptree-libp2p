@@ -24,6 +24,7 @@ pub struct Block{
     values: Vec<Entry>,         // (only leaf nodes) Vector of entries (peer_id, String) for given leases as entries
     right_block: BlockId,       // (only leaf nodes) Block id of the right block  
     parent: BlockId,            // Block id of the parent
+    available: bool,            // Block availability
 }
 
 /// Defines the Block traits for the application level
@@ -38,6 +39,7 @@ impl Block{
             values: Default::default(),
             right_block: Default::default(),
             parent: Default::default(),
+            available: true,
         }
     }
     /// Gets the peer_id of the client, serializes it with json, hashes the serialization, and then
@@ -52,6 +54,7 @@ impl Block{
         self.block_id = fresh_id;
         fresh_id
     }
+
     /// Returns the block_id of the block
     pub fn get_block_id(&self) -> BlockId {
         self.block_id
@@ -243,6 +246,11 @@ impl Block{
         }
         (new_block, divider_key)
     }
+
+    /// Returns a block's availability
+    pub fn is_available(&self) -> bool {
+        self.available
+    }
 }
 
 /// Defines BlockMap traits for the application level
@@ -277,6 +285,7 @@ impl BlockMap {
 
         // Continue searching until the block is in another client
         // or a leaf block is reached
+
         loop {
             let search_result = current_block.search_key(key);
 
@@ -289,6 +298,9 @@ impl BlockMap {
 
                     if let Some(local_block) = is_local {
                         current_block = local_block;
+                        if !current_block.is_available() {
+                            return LocalSearchResult::UnavailableBlock(current_block.get_block_id());
+                        }
                     } else {
                         return LocalSearchResult::RemoteBlock(next_block_id);
                     }
@@ -328,6 +340,7 @@ impl BlockMap {
 pub enum LocalSearchResult {
     LeafBlock(BlockId),
     RemoteBlock(BlockId),
+    UnavailableBlock(BlockId),
 }
 pub enum LeafInsertResult {
     Completed(),

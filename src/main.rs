@@ -9,12 +9,12 @@ use libp2p::multiaddr::Protocol;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use void;
-// run with cargo run -- --secret-key-seed #
 use tokio::time::{sleep, Duration};
-
 mod BPNode;
 use BPNode::{Block, Key, Entry, BlockId};
 use crate::BPNode::BlockMap;
+
+// run with cargo run -- --secret-key-seed #
 
 
 #[tokio::main]
@@ -31,8 +31,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut network_client, mut network_events, network_event_loop, network_client_id) =
     // network::new(opt.secret_key_seed).await?;
     network::new(secret_key_seed).await?;
-
-    println!("my id: {:?}", network_client_id);
 
     // Spawn the network task for it to run in the background.
     spawn(network_event_loop.run());
@@ -223,13 +221,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             IncomingRequest::RequestBlockMigration(block) => {
                                 // Will be implemented after gossipsub
                             }
-                        }
-
-                        // create a "send_block" operation, it should return an identifier (you should also be the new provider)
-                        // handle root/leaf distinction
-                        // if you are the parent, tell the request to go to his child
-                        
-                        
+                        }                        
                     }
                 }
             }
@@ -324,7 +316,7 @@ impl QueuedActions {
 pub trait Queueable {
     fn execute (&self);
 }
-//
+
 struct SearchBlock{
     block_id: BlockId,
 }
@@ -488,29 +480,29 @@ mod network {
                 receiver.await.expect("Sender not to be dropped.")
             }
             
-            pub async fn request_lease(&mut self, provider_id: PeerId, key: Key, requester_id: PeerId, entry: Entry) -> Result<String, Box<dyn Error + Send>> {
-                let (sender, receiver) = oneshot::channel();
-                self.sender
-                .send(Command::RequestLease {
-                    provider_id,
-                    sender,
-                    key,
-                    requester_id,
-                    entry,
-                })
+        pub async fn request_lease(&mut self, provider_id: PeerId, key: Key, requester_id: PeerId, entry: Entry) -> Result<String, Box<dyn Error + Send>> {
+            let (sender, receiver) = oneshot::channel();
+            self.sender
+            .send(Command::RequestLease {
+                provider_id,
+                sender,
+                key,
+                requester_id,
+                entry,
+            })
+            .await
+            .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not be dropped.")
+        }
+
+        pub async fn respond_lease(&mut self, lease_response: String, channel: ResponseChannel<GenericResponse>) {
+            self.sender
+                .send(Command::RespondLease { lease_response, channel })
                 .await
                 .expect("Command receiver not to be dropped.");
-                receiver.await.expect("Sender not be dropped.")
-            }
+        }
 
-            pub async fn respond_lease(&mut self, lease_response: String, channel: ResponseChannel<GenericResponse>) {
-                self.sender
-                    .send(Command::RespondLease { lease_response, channel })
-                    .await
-                    .expect("Command receiver not to be dropped.");
-            }
-
-            pub async fn request_remote_lease_search(&mut self, provider_id: PeerId, key: Key, requester_id: PeerId, entry: Entry, block_id: BlockId) -> Result<String, Box<dyn Error + Send>> {
+        pub async fn request_remote_lease_search(&mut self, provider_id: PeerId, key: Key, requester_id: PeerId, entry: Entry, block_id: BlockId) -> Result<String, Box<dyn Error + Send>> {
             let (sender, receiver) = oneshot::channel();
             self.sender
                 .send(Command::RequestRemoteLeaseSearch {
@@ -573,7 +565,6 @@ mod network {
                 .await
                 .expect("Command receiver not to be dropped.");
             receiver.await.expect("Sender not to be dropped.");
-
         }
 
         pub async fn boot_root(&mut self) {
@@ -635,7 +626,7 @@ mod network {
                                     // Replace with block_size_buffer and network_block_count
                                     if (block_map.get_size() + 5) > 10 {
                                         // since block_size_buffer and peer_id will be in a tuple together...
-                                        // send a request to the peer and migrate the block.
+                                        // send a request to the peer and migrate the block. Set the block unavailable
                                     }
                                     
                                     block_map.insert(new_block);

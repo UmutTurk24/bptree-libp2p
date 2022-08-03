@@ -1,6 +1,5 @@
 use clap::Parser;
 use rand::Rng;
-use serde::{Serialize, Deserialize};
 use tokio::spawn;
 use tokio::io::AsyncBufReadExt;
 use futures::prelude::*;
@@ -8,7 +7,6 @@ use libp2p::core::{Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
-use void;
 use tokio::time::{sleep, Duration};
 
 mod bptree;
@@ -67,6 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut number_generator = rand::thread_rng();
     let mut block_map = bptree::BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<bptree::Key,bptree::Entry> = HashMap::new();    
+    
     
     let mut network_block_count = 10;
     let mut block_size_buffer = 5;
@@ -224,6 +223,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }                        
                     }
+                    Some(network::Event::GossibsubRequest {incoming_message, incoming_peer_id}) => {
+
+                    }
                 }
             }
         }
@@ -243,7 +245,3 @@ struct Opt {
     #[clap(long)]
     secret_key_seed: Option<u8>,
 }
-
-
-
-// To be implemented after gossipsub, since it can be only tested with loadbalancing

@@ -28,10 +28,10 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter;
 use std::error::Error;
+use std::time::Duration;
 use void;
 
 use tokio::io;
-use tokio::time::{sleep, Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -438,18 +438,17 @@ impl EventLoop {
                     }
                 }
             }
-
             SwarmEvent::Behaviour(ComposedEvent::Gossipsub(GossipsubEvent::Message {
                 propagation_source: peer_id,
                 message_id: id,
                 message,
             })) => {
-                println!(
-                    "Got message: {} with id: {} from peer: {:?}",
-                    String::from_utf8_lossy(&message.data),
-                    id,
-                    peer_id
-                );
+                self.event_sender
+                        .send(Event::GossibsubRequest {
+                            incoming_message: message,
+                            incoming_peer_id: peer_id,
+                            })
+                        .await;
             }
             // SwarmEvent::Behaviour(ComposedEvent::Gossipsub(_)) => {}
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
@@ -908,6 +907,10 @@ pub enum Event {
         incoming_request: String,
         channel: ResponseChannel<GenericResponse>,
     },
+    GossibsubRequest {
+        incoming_message: GossipsubMessage,
+        incoming_peer_id: PeerId,
+    }
 }
 
 // Simple file exchange protocol

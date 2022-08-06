@@ -269,8 +269,8 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
     }
 }
 
-pub async fn handle_request_blockmap_size(client: &mut Client, block_map: &mut BlockMap, sender_id: PeerId, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
-    let blockmap_size = block_map.get_size();
-    client.respond_blockmap_size(blockmap_size, sender_id, channel).await;
-    Ok(())
-}
+// pub async fn handle_request_blockmap_size(client: &mut Client, block_map: &mut BlockMap, sender_id: PeerId, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
+//     let blockmap_size = block_map.get_size();
+//     client.respond_blockmap_size(blockmap_size, sender_id, channel).await;
+//     Ok(())
+// }

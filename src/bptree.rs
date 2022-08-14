@@ -11,6 +11,7 @@ use libp2p::core::PeerId;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
+use std::ops::{DerefMut, Deref};
 use rand::Rng;
 use math::round;
 
@@ -392,3 +393,36 @@ pub type BlockId = u64;
 pub type Key = u64; 
         
 
+// impl DerefMut for BlockMap {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.map
+//     }
+// }
+
+// impl Deref for BlockMap {
+//     type Target = HashMap<BlockId, Block>;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.map
+//     }
+// }
+
+// struct DerefMutExample<T> {
+//     value: T
+// }
+
+
+
+// impl<T> Deref for DerefMutExample<T> {
+//     type Target = T;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.value
+//     }
+// }
+
+// impl<T> DerefMut for DerefMutExample<T> {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.value
+//     }
+// }

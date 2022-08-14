@@ -103,6 +103,7 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
             },
             LocalSearchResult::UnavailableBlock(unavailable_block_id) => {
                 // Will be completed after gossipsub is implemented
+                
                 Ok(())
             }
         }

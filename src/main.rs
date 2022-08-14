@@ -1,12 +1,16 @@
 use clap::Parser;
+use libp2p::gossipsub::Topic;
 use rand::Rng;
 use tokio::spawn;
 use tokio::io::AsyncBufReadExt;
 use futures::prelude::*;
 use libp2p::core::{Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
+use tokio::sync::Mutex;
 use std::collections::{HashMap, VecDeque};
+// use std::default::default;
 use std::error::Error;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 mod bptree;
@@ -65,45 +69,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut number_generator = rand::thread_rng();
     let mut block_map = bptree::BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<bptree::Key,bptree::Entry> = HashMap::new();    
-    
-    
-    let mut network_block_count = 10;
+    let mut target_peer_tracker = Arc::new(Mutex::new(migration::TargetPeer {target_peer_id: network_client_id, block_num: 0}));
+
+    let mut network_block_count = 5;
     let mut block_size_buffer = 5;
 
     // THREAD SPAWN FOR FINDING THE CLIENT WITH THE LEAST AMOUNT OF BLOCKS
-    /*
+    
 
     let mut thread_client = network_client.clone();
 
     let block_counter_handle = tokio::spawn(async move {
-        thread_client.start_providing("block_map_counter".to_string()).await;
+        let topic = Topic::new("client_block");
+
+        thread_client.subscribe_topic(topic.clone());
         loop {
             sleep(Duration::from_millis(20000)).await;
-            let providers = thread_client.get_providers("block_map_counter".to_string()).await;
-
-            let requests = providers.into_iter().map(|provider_id| {
-                let mut thread_client = thread_client.clone();
-                tokio::spawn(async move { thread_client.request_blockmap_size(provider_id).await }.boxed())
-            });
-
-            // let responses = requests.await.map_err(|_| "None of the providers returned.")?;
-            // join!(requests);
-            // let data = futures::future::select_all(requests).await.0;
-
-            // let mut map_of_sizes: HashMap<String, usize> = HashMap::new();
-            // requests.map(|raw_responses| {
-            //     let responses = raw_responses.await;
-            //     let deserealized_response: (usize, PeerId) = serde_json::from_str(&responses).unwrap();
-            // });
-
-            // println!("Item_resolved: {:?}", item_resolved);
-                
-            // TODOs:
-            // Update the block_count 
+            thread_client.publish_topic(topic.clone(), block_map.get_size().to_string());
         }
     });
-
-     */
+     
 
     
     loop {
@@ -215,9 +200,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             network::IncomingRequest::RequestRemoteSearch(requester_id, requested_key, block_id, entry) => {
                                 events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, &mut block_map, channel).await?;
                             },
-                            network::IncomingRequest::RequestBlockmapSize(_requester_id) => {
-                                events::handle_request_blockmap_size(&mut network_client, &mut block_map, network_client_id, channel).await?;
-                            }
+                            // network::IncomingRequest::RequestBlockmapSize(_requester_id) => {
+                            //     events::handle_request_blockmap_size(&mut network_client, &mut block_map, network_client_id, channel).await?;
+                            // }
                             network::IncomingRequest::RequestBlockMigration(block) => {
                                 // Will be implemented after gossipsub
                             }

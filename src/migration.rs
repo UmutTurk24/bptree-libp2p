@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use libp2p::PeerId;
 use crate::bptree;
 
 struct QueueMap {
@@ -57,3 +58,7 @@ struct SearchBlock{
     block_id: bptree::BlockId,
 }
 
+pub struct TargetPeer {
+    pub target_peer_id: PeerId,
+    pub block_num: u8,
+}

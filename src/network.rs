@@ -280,14 +280,11 @@ impl Client {
     //         .expect("Command receiver not to be dropped.");
     // }
 
-    pub async fn publish_topic(&mut self, topic: String) {
-        let (sender, receiver) = oneshot::channel();
-        let topic = Topic::new(topic);
+    pub async fn publish_topic(&mut self, topic: Topic, data: String) {
         self.sender
-            .send(Command::PublishTopic { topic, sender })
+            .send(Command::PublishToTopic { topic, data })
             .await
             .expect("Command receiver not to be dropped.");
-        receiver.await.expect("Sender not to be dropped.");
     }
 
     pub async fn boot_root(&mut self) {
@@ -314,20 +311,20 @@ impl Client {
         receiver.await.expect("Sender not to be dropped.");
     }
 
-    pub async fn request_blockmap_size(
-        &mut self,
-        provider_id: PeerId,
-    ) -> Result<String, Box<dyn Error + Send>> {
-        let (sender, receiver) = oneshot::channel();
-        self.sender
-            .send(Command::RequestBlockmapSize {
-                provider_id,
-                sender,
-            })
-            .await
-            .expect("Command receiver not to be dropped.");
-        receiver.await.expect("Sender not be dropped.")
-    }
+    // pub async fn request_blockmap_size(
+    //     &mut self,
+    //     provider_id: PeerId,
+    // ) -> Result<String, Box<dyn Error + Send>> {
+    //     let (sender, receiver) = oneshot::channel();
+    //     self.sender
+    //         .send(Command::RequestBlockmapSize {
+    //             provider_id,
+    //             sender,
+    //         })
+    //         .await
+    //         .expect("Command receiver not to be dropped.");
+    //     receiver.await.expect("Sender not be dropped.")
+    // }
     pub async fn respond_blockmap_size(
         &mut self,
         blockmap_size: usize,
@@ -359,6 +356,15 @@ impl Client {
 
     pub async fn respond_block_migration(&mut self, block: Block, target_id: PeerId) {
         // Will be implemented after gossipsub
+    }
+
+    pub async fn subscribe_topic(&mut self, topic: Topic) {
+        self.sender
+            .send(Command::Subscribe {
+                topic,
+            })
+            .await
+            .expect("Command receiver not to be dropped.");
     }
 }
 
@@ -448,7 +454,8 @@ impl EventLoop {
                             incoming_message: message,
                             incoming_peer_id: peer_id,
                             })
-                        .await;
+                        .await
+                        .expect("Event receiver not to be dropped ");
             }
             // SwarmEvent::Behaviour(ComposedEvent::Gossipsub(_)) => {}
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
@@ -623,21 +630,21 @@ impl EventLoop {
                     .send_response(channel, GenericResponse(lease_response))
                     .expect("Connection to peer to be still open.");
             }
-            Command::RequestBlockmapSize {
-                provider_id,
-                sender,
-            } => {
-                // Done
-                let blockmap_size_request: IncomingRequest =
-                    IncomingRequest::RequestBlockmapSize(provider_id);
-                let serialize_request = serde_json::to_string(&blockmap_size_request).unwrap();
-                let request_id = self
-                    .swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_request(&provider_id, GenericRequest(serialize_request));
-                self.pending_generic_request.insert(request_id, sender);
-            }
+            // Command::RequestBlockmapSize {
+            //     provider_id,
+            //     sender,
+            // } => {
+            //     // Done
+            //     let blockmap_size_request: IncomingRequest =
+            //         IncomingRequest::RequestBlockmapSize(provider_id);
+            //     let serialize_request = serde_json::to_string(&blockmap_size_request).unwrap();
+            //     let request_id = self
+            //         .swarm
+            //         .behaviour_mut()
+            //         .request_response
+            //         .send_request(&provider_id, GenericRequest(serialize_request));
+            //     self.pending_generic_request.insert(request_id, sender);
+            // }
             Command::RespondBlockmapSize {
                 blockmap_size,
                 sender_id,
@@ -719,7 +726,7 @@ impl EventLoop {
                     .expect("No store error.");
                 self.pending_start_providing.insert(query_id, sender);
             }
-            Command::PublishTopic { topic, sender } => {
+            Command::PublishToTopic { topic, data } => {
                 let _query_id = self
                     .swarm
                     .behaviour_mut()
@@ -753,9 +760,26 @@ impl EventLoop {
                     .send_response(channel, GenericResponse(serialize_request))
                     .expect("Connection to peer to be still open.");
             }
+
+            Command::Subscribe { topic } => {
+                self.swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .subscribe(&topic);
+            }   
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum IncomingRequest {
+    RequestLease(PeerId, Key, Entry),
+    RequestUpdateParent(Key, BlockId, BlockId),
+    RequestRemoteSearch(PeerId, Key, BlockId, Entry),
+    // RequestBlockmapSize(PeerId),
+    RequestBlockMigration(Block),
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum LeaseResponse {
@@ -788,14 +812,7 @@ enum ComposedEvent {
     Gossipsub(GossipsubEvent),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum IncomingRequest {
-    RequestLease(PeerId, Key, Entry),
-    RequestUpdateParent(Key, BlockId, BlockId),
-    RequestRemoteSearch(PeerId, Key, BlockId, Entry),
-    RequestBlockmapSize(PeerId),
-    RequestBlockMigration(Block),
-}
+
 
 impl From<RequestResponseEvent<GenericRequest, GenericResponse>> for ComposedEvent {
     fn from(event: RequestResponseEvent<GenericRequest, GenericResponse>) -> Self {
@@ -859,14 +876,14 @@ enum Command {
         network_alias: String,
         sender: oneshot::Sender<()>,
     },
-    PublishTopic {
+    PublishToTopic {
         topic: Topic,
-        sender: oneshot::Sender<()>,
+        data: String,
     },
-    RequestBlockmapSize {
-        provider_id: PeerId,
-        sender: oneshot::Sender<Result<String, Box<dyn Error + Send>>>,
-    },
+    // RequestBlockmapSize {
+    //     provider_id: PeerId,
+    //     sender: oneshot::Sender<Result<String, Box<dyn Error + Send>>>,
+    // },
     RespondBlockmapSize {
         blockmap_size: usize,
         sender_id: PeerId,
@@ -899,6 +916,9 @@ enum Command {
     RespondBlockMigration {
         channel: ResponseChannel<GenericResponse>,
     },
+    Subscribe {
+        topic: Topic,
+    }
 }
 
 #[derive(Debug)]

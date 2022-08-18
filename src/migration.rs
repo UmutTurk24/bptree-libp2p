@@ -31,11 +31,15 @@ impl QueueMap{
     }
 }
 
-struct QueuedActions {
+pub struct QueuedActions {
     pub queued_actions: VecDeque<Box<dyn Queueable>>,
 }
 
 impl QueuedActions {
+    pub fn new () -> Self {
+        return Self { queued_actions: Default::default() }
+    }
+
     pub fn run (&self) {
         for action in self.queued_actions.iter() {
             action.execute();
@@ -57,8 +61,8 @@ pub trait Queueable {
 struct SearchBlock{
     block_id: bptree::BlockId,
 }
-
+#[derive(Clone)]
 pub struct TargetPeer {
-    pub target_peer_id: PeerId,
-    pub block_num: u8,
+    pub peer_id: PeerId,
+    pub block_number: u64,
 }

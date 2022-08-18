@@ -264,20 +264,6 @@ impl Client {
             .expect("Command receiver not to be dropped.");
     }
 
-    // pub async fn respond_split_block(&mut self, block_data: String,  channel: ResponseChannel<GenericResponse>) {
-    //     self.sender
-    //         .send(Command::RespondSplitBlock { block_data, channel })
-    //         .await
-    //         .expect("Command receiver not to be dropped.");
-    // }
-
-    // pub async fn respond_lease_change(&mut self, lease_change: String, channel: ResponseChannel<GenericResponse>) {
-    //     self.sender
-    //         .send(Command::RespondLeaseChange { lease_change,  channel })
-    //         .await
-    //         .expect("Command receiver not to be dropped.");
-    // }
-
     pub async fn publish_topic(&mut self, topic: Topic, data: String) {
         self.sender
             .send(Command::PublishToTopic { topic, data })
@@ -309,36 +295,6 @@ impl Client {
         receiver.await.expect("Sender not to be dropped.");
     }
 
-    // pub async fn request_blockmap_size(
-    //     &mut self,
-    //     provider_id: PeerId,
-    // ) -> Result<String, Box<dyn Error + Send>> {
-    //     let (sender, receiver) = oneshot::channel();
-    //     self.sender
-    //         .send(Command::RequestBlockmapSize {
-    //             provider_id,
-    //             sender,
-    //         })
-    //         .await
-    //         .expect("Command receiver not to be dropped.");
-    //     receiver.await.expect("Sender not be dropped.")
-    // }
-    pub async fn respond_blockmap_size(
-        &mut self,
-        blockmap_size: usize,
-        sender_id: PeerId,
-        channel: ResponseChannel<GenericResponse>,
-    ) {
-        self.sender
-            .send(Command::RespondBlockmapSize {
-                blockmap_size,
-                sender_id,
-                channel,
-            })
-            .await
-            .expect("Command receiver not to be dropped.");
-    }
-
     pub async fn request_block_migration(&mut self, block: Block, target_id: PeerId) {
         let (sender, receiver) = oneshot::channel();
         self.sender
@@ -352,8 +308,11 @@ impl Client {
         // receiver.await.expect("Sender not be dropped.")
     }
 
-    pub async fn respond_block_migration(&mut self, block: Block, target_id: PeerId) {
-        // Will be implemented after gossipsub
+    pub async fn respond_block_migration(&mut self, channel: ResponseChannel<GenericResponse>,) {
+        self.sender
+            .send(Command::RespondBlockMigration { channel } )
+            .await
+            .expect("Command receiver not to be dropped.");
     }
 
     pub async fn subscribe_topic(&mut self, topic: Topic) {
@@ -729,7 +688,7 @@ impl EventLoop {
                     .swarm
                     .behaviour_mut()
                     .gossipsub
-                    .publish(topic, "blocks")
+                    .publish(topic, data)
                     .expect("Publishing");
             }
 
@@ -774,7 +733,6 @@ pub enum IncomingRequest {
     RequestLease(PeerId, Key, Entry),
     RequestUpdateParent(Key, BlockId, BlockId),
     RequestRemoteSearch(PeerId, Key, BlockId, Entry),
-    // RequestBlockmapSize(PeerId),
     RequestBlockMigration(Block),
 }
 

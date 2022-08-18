@@ -4,14 +4,11 @@ use libp2p::core::{Multiaddr, PeerId};
 use libp2p::gossipsub::Topic;
 use libp2p::multiaddr::Protocol;
 use rand::Rng;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use tokio::io::AsyncBufReadExt;
 use tokio::spawn;
-use tokio::sync::Mutex;
 // use std::default::default;
 use std::error::Error;
-use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 
 mod bptree;
 mod events;
@@ -66,9 +63,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut number_generator = rand::thread_rng();
     let mut block_map = bptree::BlockMap::boot_new(&network_client_id);
     let mut lease_map: HashMap<bptree::Key, bptree::Entry> = HashMap::new();
+
+    let mut queued_actions = migration::QueuedActions::new();
+
     let mut publish_topic = gossippoll::topic_publisher(10000).await;
     let migration = Topic::new("blockmap");
-    network_client.subscribe_topic(migration.clone());
+    let mut target_peer = migration::TargetPeer {
+        peer_id: network_client_id,
+        block_number: 0,
+    };
+
+    network_client.subscribe_topic(migration.clone()).await;
 
     loop {
         tokio::select! {
@@ -164,27 +169,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // deserealize the incoming request and match with possible requests
                 let deserealized_request: network::IncomingRequest = serde_json::from_str(&incoming_request).unwrap();
+                
 
                 match deserealized_request {
                     network::IncomingRequest::RequestLease(requester_id, requested_key, entry) => {
-                        events::handle_request_lease(&mut network_client, requester_id, requested_key, entry, &mut block_map, channel).await?;
+                        events::handle_request_lease(&mut network_client, requester_id, requested_key, entry, target_peer.clone(), &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestUpdateParent(divider_key, new_block_id, parent_id) => {
-                        events::handle_request_update_parent(&mut network_client, divider_key, new_block_id, parent_id, &mut block_map, channel).await?;
+                        events::handle_request_update_parent(&mut network_client, divider_key, new_block_id, parent_id, target_peer.clone(), &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestRemoteSearch(requester_id, requested_key, block_id, entry) => {
-                        events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, &mut block_map, channel).await?;
+                        events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, target_peer.clone(), &mut block_map, channel).await?;
                     },
-                    // network::IncomingRequest::RequestBlockmapSize(_requester_id) => {
-                    //     events::handle_request_blockmap_size(&mut network_client, &mut block_map, network_client_id, channel).await?;
-                    // }
                     network::IncomingRequest::RequestBlockMigration(block) => {
-                        // Will be implemented after gossipsub
+                        events::handle_request_block_migration(&mut network_client, block, &mut block_map, channel).await?;
                     },
                 }
             }
             Some(network::Event::GossibsubRequest {incoming_message, incoming_peer_id}) => {
-                // let x = incoming_m
+                let size: u64 = std::str::from_utf8(&incoming_message.data).unwrap().parse().unwrap();
+                if target_peer.block_number < size {
+                    target_peer.block_number = size;
+                    target_peer.peer_id = incoming_peer_id;
+                }
             }
         },
         publish_event = publish_topic.next() => match publish_event {
@@ -194,7 +201,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         network_client.publish_topic(migration.clone(), current_size.to_string()).await;
                     }
                 },
-                None => todo!(),
+                None => {},
             }
         }
     }

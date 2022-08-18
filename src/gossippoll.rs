@@ -1,8 +1,7 @@
 use futures::SinkExt;
 use futures::channel::mpsc;
 use futures::channel::mpsc::Receiver;
-use tokio::time::sleep;
-use tokio::time::Duration;
+use tokio::time::{sleep, Duration};
 
 /// Sending a request to the main loop at every given interval
 /// 

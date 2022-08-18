@@ -338,6 +338,12 @@ impl BlockMap {
     pub fn get_size(&self) -> usize {
         self.map.len()
     }
+
+    pub fn has_block(&self, block_id: BlockId) -> bool {
+        self.map.contains_key(&block_id)
+        
+    }
+    
 }
 
 pub enum LocalSearchResult {
@@ -391,38 +397,8 @@ pub struct Data {
 
 pub type BlockId = u64;
 pub type Key = u64; 
-        
 
-// impl DerefMut for BlockMap {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.map
-//     }
-// }
-
-// impl Deref for BlockMap {
-//     type Target = HashMap<BlockId, Block>;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.map
-//     }
-// }
-
-// struct DerefMutExample<T> {
-//     value: T
-// }
-
-
-
-// impl<T> Deref for DerefMutExample<T> {
-//     type Target = T;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.value
-//     }
-// }
-
-// impl<T> DerefMut for DerefMutExample<T> {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.value
-//     }
-// }
+pub struct Child {
+    block_id: BlockId,
+    availability: bool,
+}

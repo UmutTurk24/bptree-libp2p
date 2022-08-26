@@ -70,7 +70,8 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
                                 let update_parent_requests = providers.into_iter().map(|peer_id| {
                                     let mut network_client = client.clone();
                                     let new_block_id = new_block.get_block_id();
-                                    tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
+                                    let new_block_availability = new_block.get_availability();
+                                    tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, new_block_availability, remote_parent_id).await }.boxed())
                                 });
 
                                 // As long as there is a response, continue
@@ -80,10 +81,9 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
                                     .0
                                     .unwrap();
                             }
-
                             } else {
                                 let parent_block = block_map.get_mut_block(remote_parent_id);
-                                parent_block.insert_child(divider_key, new_block.get_block_id());
+                                parent_block.insert_child(divider_key, new_block.get_block_id(), new_block.get_availability());
                                 
                             }
                     
@@ -164,7 +164,8 @@ pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_
                             let update_parent_requests = providers.into_iter().map(|peer_id| {
                                 let mut network_client = client.clone();
                                 let new_block_id = new_block.get_block_id();
-                                tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
+                                let new_block_availability = new_block.get_availability();
+                                tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, new_block_availability, remote_parent_id).await }.boxed())
                             });
 
                             // As long as there is a response, continue
@@ -177,7 +178,7 @@ pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_
                         } else {
                             // Searched parent is in the block map, do a local insertion
                             let parent_block = block_map.get_mut_block(remote_parent_id);
-                            parent_block.insert_child(divider_key, new_block.get_block_id());
+                            parent_block.insert_child(divider_key, new_block.get_block_id(), new_block.get_availability());
                         }
                         
                         let lease_response = LeaseResponse::LeaseSuccess;
@@ -201,9 +202,9 @@ pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_
     }
 }
 
-pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key, new_block_id: BlockId, parent_id: BlockId, target_peer: TargetPeer, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>)-> Result<(), Box<dyn Error>> {
+pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key, new_block_id: BlockId, new_block_availability: bool, parent_id: BlockId, target_peer: TargetPeer, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>)-> Result<(), Box<dyn Error>> {
     let parent_block = block_map.get_mut_block(parent_id);
-    let insert_result = parent_block.insert_child(divider_key, new_block_id);
+    let insert_result = parent_block.insert_child(divider_key, new_block_id, new_block_availability);
     
     match insert_result {
         InternalInsertResult::Completed() => {
@@ -216,7 +217,7 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
             let (mut new_block, new_divider_key) = parent_block.split_internal_block();
             new_block.set_right_block(parent_block.get_right_block());
             parent_block.set_right_block(new_block.assign_random_id());
-            parent_block.insert_child(divider_key, new_block_id);
+            parent_block.insert_child(divider_key, new_block_id, new_block_availability);
 
             if parent_block.get_parent_id() == 0 {
                 // Create a new parent and assign the keys from splitted blocks
@@ -251,7 +252,8 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
                     let update_parent_requests = providers.into_iter().map(|peer_id| {
                         let mut network_client = client.clone();
                         let new_block_id = new_block.get_block_id();
-                        tokio::spawn(async move { network_client.request_update_parent(peer_id, divider_key, new_block_id, remote_parent_id).await }.boxed())
+                        let block_availability = new_block.get_availability();
+                        tokio::spawn(async move { network_client.request_update_parent(peer_id, new_divider_key, new_block_id, new_block_availability, remote_parent_id).await }.boxed())
                     });
 
                     // As long as there is a response, continue
@@ -264,7 +266,7 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
                 } else {
                     // Searched parent is in the block map, do a local insertion
                     let parent_block = block_map.get_mut_block(remote_parent_id);
-                    parent_block.insert_child(divider_key, new_block.get_block_id());
+                    parent_block.insert_child(divider_key, new_block.get_block_id(), new_block.get_availability());
                 }
                 
                 let insertion_response = InsertionResponse::InsertSuccess;

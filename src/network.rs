@@ -234,6 +234,7 @@ impl Client {
         provider_id: PeerId,
         divider_key: Key,
         new_block_id: BlockId,
+        new_block_availability: bool,
         parent_id: BlockId,
     ) -> Result<String, Box<dyn Error + Send>> {
         let (sender, receiver) = oneshot::channel();
@@ -243,6 +244,7 @@ impl Client {
                 sender,
                 divider_key,
                 new_block_id,
+                new_block_availability,
                 parent_id,
             })
             .await
@@ -620,10 +622,11 @@ impl EventLoop {
                 sender,
                 divider_key,
                 new_block_id,
+                new_block_availability,
                 parent_id,
             } => {
                 let update_parent_request: IncomingRequest =
-                    IncomingRequest::RequestUpdateParent(divider_key, new_block_id, parent_id);
+                    IncomingRequest::RequestUpdateParent(divider_key, new_block_id, new_block_availability, parent_id);
                 let serialize_request = serde_json::to_string(&update_parent_request).unwrap();
                 let request_id = self
                     .swarm
@@ -731,7 +734,7 @@ impl EventLoop {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum IncomingRequest {
     RequestLease(PeerId, Key, Entry),
-    RequestUpdateParent(Key, BlockId, BlockId),
+    RequestUpdateParent(Key, BlockId, bool, BlockId),
     RequestRemoteSearch(PeerId, Key, BlockId, Entry),
     RequestBlockMigration(Block),
 }
@@ -850,6 +853,7 @@ enum Command {
         sender: oneshot::Sender<Result<String, Box<dyn Error + Send>>>,
         divider_key: Key,
         new_block_id: BlockId,
+        new_block_availability: bool,
         parent_id: BlockId,
     },
     RespondUpdateParent {

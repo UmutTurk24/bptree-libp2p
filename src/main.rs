@@ -175,8 +175,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     network::IncomingRequest::RequestLease(requester_id, requested_key, entry) => {
                         events::handle_request_lease(&mut network_client, requester_id, requested_key, entry, target_peer.clone(), &mut block_map, channel).await?;
                     },
-                    network::IncomingRequest::RequestUpdateParent(divider_key, new_block_id, parent_id) => {
-                        events::handle_request_update_parent(&mut network_client, divider_key, new_block_id, parent_id, target_peer.clone(), &mut block_map, channel).await?;
+                    network::IncomingRequest::RequestUpdateParent(divider_key, new_block_id, new_block_availability, parent_id) => {
+                        events::handle_request_update_parent(&mut network_client, divider_key, new_block_id, new_block_availability, parent_id, target_peer.clone(), &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestRemoteSearch(requester_id, requested_key, block_id, entry) => {
                         events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, target_peer.clone(), &mut block_map, channel).await?;

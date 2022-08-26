@@ -20,14 +20,15 @@ static BLOCK_SIZE: u8 = 11;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block{ 
-    block_id: BlockId,          // Block's assigned block id
-    block_size: u8,             // Size of the block
-    keys: Vec<Key>,             // Vector of keys (u64) for indexing
-    children: Vec<BlockId>,     // (only internal nodes) Vector of children (u64) for pointing to next block
-    values: Vec<Entry>,         // (only leaf nodes) Vector of entries (peer_id, String) for given leases as entries
-    right_block: BlockId,       // (only leaf nodes) Block id of the right block  
-    parent: BlockId,            // Block id of the parent
-    available: bool,            // Block availability
+    block_id: BlockId,                // Block's assigned block id
+    block_size: u8,                   // Size of the block
+    keys: Vec<Key>,                   // Vector of keys (u64) for indexing
+    children: Vec<BlockId>,           // (only internal nodes) Vector of children (u64) for pointing to next block
+    children_availability: Vec<bool>, // (only internal nodes) Vector of boolean for storing the availability of the link
+    values: Vec<Entry>,               // (only leaf nodes) Vector of entries (peer_id, String) for given leases as entries
+    right_block: BlockId,             // (only leaf nodes) Block id of the right block  
+    parent: BlockId,                  // Block id of the parent
+    availability: bool,                  // Block availability
 }
 
 /// Defines the Block traits for the application level
@@ -39,10 +40,11 @@ impl Block{
             block_size: BLOCK_SIZE,
             keys: Default::default(),
             children: Default::default(),
+            children_availability: Default::default(),
             values: Default::default(),
             right_block: Default::default(),
             parent: Default::default(),
-            available: true,
+            availability: true,
         }
     }
     /// Gets the peer_id of the client, serializes it with json, hashes the serialization, and then
@@ -131,11 +133,13 @@ impl Block{
         for index in (divider as u8)..BLOCK_SIZE {
             new_block.keys.push(self.keys[index as usize]);
             new_block.children.push(self.children[index as usize]);
+            new_block.children_availability.push(self.children_availability[index as usize]);
         }
 
         for _ in (divider as u8)..BLOCK_SIZE {
             self.keys.pop();
             self.children.pop();
+            self.children_availability.pop();
         }
         let divider_key = new_block.keys[0];
         (new_block, divider_key)
@@ -182,15 +186,19 @@ impl Block{
         let parent_id = self.assign_random_id();
         left_block.set_parent(parent_id);
         right_block.set_parent(parent_id);
-        self.insert_on_new_parent(left_block.get_block_id(), *divider_key, right_block.get_block_id());
+        self.insert_on_new_parent(&left_block.get_block_id(), divider_key, &right_block.get_block_id(), &left_block.get_availability(), &right_block.get_availability());
     }
 
 
     /// Inserts key/id pairs to the newly created parent
-    pub fn insert_on_new_parent(&mut self, old_block_id: BlockId, divider_key: Key, new_block_id: BlockId) {
-        self.keys.push(divider_key);
-        self.children.push(old_block_id);
-        self.children.push(new_block_id);
+    pub fn insert_on_new_parent(&mut self, old_block_id: &BlockId, divider_key: &Key, new_block_id: &BlockId, left_block_availability: &bool, right_block_availability: &bool) {
+        self.keys.push(*divider_key);
+
+        self.children.push(*old_block_id);
+        self.children.push(*new_block_id);
+
+        self.children_availability.push(*left_block_availability);
+        self.children_availability.push(*right_block_availability);
     }
 
 
@@ -199,7 +207,7 @@ impl Block{
     /// Returns InternalInsertResult,
     /// - SplitRequest(): Block reached its limit and needs to split 
     /// - Completed(): Key/value pair is inserted successfully
-    pub fn insert_child(&mut self, new_key: Key, child_id: BlockId) -> InternalInsertResult {
+    pub fn insert_child(&mut self, new_key: Key, child_id: BlockId, child_availability: bool) -> InternalInsertResult {
         let mut key_index: usize = 0;
 
         // There will never be a case where this method is called on an empty inside block.
@@ -220,6 +228,7 @@ impl Block{
         }
 
         self.children.insert(key_index + 1, child_id); 
+        self.children_availability.insert(key_index + 1, child_availability);
         self.keys.insert(key_index, new_key);
         return InternalInsertResult::Completed(); 
     }
@@ -251,8 +260,8 @@ impl Block{
     }
 
     /// Returns a block's availability
-    pub fn is_available(&self) -> bool {
-        self.available
+    pub fn get_availability(&self) -> bool {
+        self.availability
     }
 }
 
@@ -301,7 +310,7 @@ impl BlockMap {
 
                     if let Some(local_block) = is_local {
                         current_block = local_block;
-                        if !current_block.is_available() {
+                        if !current_block.get_availability() {
                             return LocalSearchResult::UnavailableBlock(current_block.get_block_id());
                         }
                     } else {

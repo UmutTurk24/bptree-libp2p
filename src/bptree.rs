@@ -27,8 +27,9 @@ pub struct Block{
     children_availability: Vec<bool>, // (only internal nodes) Vector of boolean for storing the availability of the link
     values: Vec<Entry>,               // (only leaf nodes) Vector of entries (peer_id, String) for given leases as entries
     right_block: BlockId,             // (only leaf nodes) Block id of the right block  
+    right_block_key: Key,             // (only leaf nodes) First key of the right block
     parent: BlockId,                  // Block id of the parent
-    availability: bool,                  // Block availability
+    availability: bool,               // Block availability
 }
 
 /// Defines the Block traits for the application level
@@ -43,6 +44,7 @@ impl Block{
             children_availability: Default::default(),
             values: Default::default(),
             right_block: Default::default(),
+            right_block_key: Default::default(),
             parent: Default::default(),
             availability: true,
         }
@@ -164,7 +166,17 @@ impl Block{
 
     /// Sets the right block to the given right_block_id
     pub fn set_right_block(&mut self, right_block_id: BlockId) {
-        self.right_block = right_block_id
+        self.right_block = right_block_id;
+    }
+
+    /// Sets the right block key to the given right_block_key
+    pub fn set_right_block_key(&mut self, right_block_key: Key) {
+        self.right_block_key = right_block_key;
+    }
+
+    /// Sets the right block key to the given right_block_key
+    pub fn get_right_block_key(&self) -> Key {
+        self.right_block_key
     }
 
 

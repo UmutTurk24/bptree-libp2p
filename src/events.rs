@@ -32,7 +32,11 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
                         // Perform the split for insertion
                         let (mut new_block, divider_key) = leaf_block.split_leaf_block();
                         new_block.set_right_block(leaf_block.get_right_block());
+                        new_block.set_right_block_key(leaf_block.get_right_block_key());
+
                         leaf_block.set_right_block(new_block.assign_random_id());
+                        leaf_block.set_right_block_key(divider_key);
+
                         leaf_block.insert_entry(requested_key, entry);
                         
                         if leaf_block.get_parent_id() == 0 {
@@ -127,8 +131,13 @@ pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_
                 },
                 LeafInsertResult::SplitRequest(entry) => {
                     let (mut new_block, divider_key) = leaf_block.split_leaf_block();
+
                     new_block.set_right_block(leaf_block.get_right_block());
+                    new_block.set_right_block_key(leaf_block.get_right_block_key());
+
                     leaf_block.set_right_block(new_block.assign_random_id());
+                    leaf_block.set_right_block_key(divider_key);
+
                     leaf_block.insert_entry(requested_key, entry);
 
                     if leaf_block.get_parent_id() == 0 {
@@ -216,7 +225,11 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
         InternalInsertResult::SplitRequest() => {
             let (mut new_block, new_divider_key) = parent_block.split_internal_block();
             new_block.set_right_block(parent_block.get_right_block());
+            new_block.set_right_block_key(parent_block.get_right_block_key());
+
             parent_block.set_right_block(new_block.assign_random_id());
+            parent_block.set_right_block_key(new_divider_key);
+
             parent_block.insert_child(divider_key, new_block_id, new_block_availability);
 
             if parent_block.get_parent_id() == 0 {

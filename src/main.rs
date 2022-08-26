@@ -169,7 +169,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // deserealize the incoming request and match with possible requests
                 let deserealized_request: network::IncomingRequest = serde_json::from_str(&incoming_request).unwrap();
-                
 
                 match deserealized_request {
                     network::IncomingRequest::RequestLease(requester_id, requested_key, entry) => {

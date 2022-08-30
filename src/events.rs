@@ -265,7 +265,7 @@ pub async fn handle_request_update_parent(client: &mut Client, divider_key: Key,
                     let update_parent_requests = providers.into_iter().map(|peer_id| {
                         let mut network_client = client.clone();
                         let new_block_id = new_block.get_block_id();
-                        let block_availability = new_block.get_availability();
+                        let new_block_availability = new_block.get_availability();
                         tokio::spawn(async move { network_client.request_update_parent(peer_id, new_divider_key, new_block_id, new_block_availability, remote_parent_id).await }.boxed())
                     });
 

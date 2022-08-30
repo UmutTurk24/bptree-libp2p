@@ -61,6 +61,13 @@ pub trait Queueable {
 struct SearchBlock{
     block_id: bptree::BlockId,
 }
+
+impl Queueable for SearchBlock {
+    fn execute (&self) {
+        todo!()
+    }
+}
+
 #[derive(Clone)]
 pub struct TargetPeer {
     pub peer_id: PeerId,

@@ -68,6 +68,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut publish_topic = gossippoll::topic_publisher(10000).await;
     let migration = Topic::new("blockmap");
+
+    /////////////////////////////////////////
+    //  IMPLEMENT A ROUND-ROBIN SYSTEM    /// 
+    //  FOR FINDING TARGET PEERS          ///
+    //  FROM THE GOSSIP-SUB NETWORK       ///
+    /////////////////////////////////////////
+    
     let mut target_peer = migration::TargetPeer {
         peer_id: network_client_id,
         block_number: 0,
@@ -172,13 +179,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match deserealized_request {
                     network::IncomingRequest::RequestLease(requester_id, requested_key, entry) => {
-                        events::handle_request_lease(&mut network_client, requester_id, requested_key, entry, target_peer.clone(), &mut block_map, channel).await?;
+                        events::handle_request_lease(&mut network_client, requester_id, requested_key, entry, target_peer.clone(), &mut queued_actions, &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestUpdateParent(divider_key, new_block_id, new_block_availability, parent_id) => {
                         events::handle_request_update_parent(&mut network_client, divider_key, new_block_id, new_block_availability, parent_id, target_peer.clone(), &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestRemoteSearch(requester_id, requested_key, block_id, entry) => {
-                        events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, target_peer.clone(), &mut block_map, channel).await?;
+                        events::handle_request_remote_lease_search(&mut network_client, requester_id, requested_key, block_id, entry, target_peer.clone(), &mut queued_actions, &mut block_map, channel).await?;
                     },
                     network::IncomingRequest::RequestBlockMigration(block) => {
                         events::handle_request_block_migration(&mut network_client, block, &mut block_map, channel).await?;

@@ -9,7 +9,7 @@ use crate::bptree::*;
 use crate::migration::*;
 
 
-pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, requested_key: Key, entry: Entry, target_peer: TargetPeer, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, requested_key: Key, entry: Entry, target_peer: TargetPeer, queued_actions: &mut QueuedActions, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
     
     // Each root takes the requests for initializing a search in the map. Therefore the search needs to 
     // start from the root node of the block_map
@@ -40,6 +40,11 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
                         leaf_block.insert_entry(requested_key, entry);
                         
                         if leaf_block.get_parent_id() == 0 {
+                            // Return a response to the requester while client handles rest of the operations
+                            let lease_response = LeaseResponse::LeaseSuccess;
+                            let serialized_response = serde_json::to_string(&lease_response).unwrap();
+                            client.respond_lease(serialized_response, channel).await;
+
                             // Create a new parent and assign the keys from splitted blocks
                             // Add the parent block to the block map
                             let mut parent_block = Block::new();
@@ -49,12 +54,18 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
 
                             // Move the newly created block to another client
                             let mut network_client = client.clone(); 
-                            tokio::spawn(async move { network_client.request_block_migration(new_block, target_peer.peer_id).await }.boxed());
+                            tokio::spawn(async move {
+                                // Make the newly created block unavailable while transferring
+                                new_block.set_availability(false); 
+
+                                network_client.request_block_migration(new_block, target_peer.peer_id).await; 
+
+                                // Once the migration is completed, inform the parent. 
+                                // Since the parent is local, it is going to be done instantenously
+                                // TODO: Update the parent
+                            }.boxed());
                             
-                            // Return a response to the client
-                            let lease_response = LeaseResponse::LeaseSuccess;
-                            let serialized_response = serde_json::to_string(&lease_response).unwrap();
-                            client.respond_lease(serialized_response, channel).await;
+                            
                             Ok(())
                         } else {
                             // Send a request to the parent block for inserting key/child pair
@@ -107,14 +118,14 @@ pub async fn handle_request_lease(client: &mut Client, _requester_id: PeerId, re
                 Ok(())
             },
             LocalSearchResult::UnavailableBlock(unavailable_block_id) => {
-                // Will be completed after gossipsub is implemented
-                
+                let action = SearchBlock::new(unavailable_block_id, requested_key, entry, target_peer, channel);
+                queued_actions.queue(Box::new(action));
                 Ok(())
             }
         }
 }
 
-pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_id: PeerId, requested_key: Key, current_block_id: BlockId, entry: Entry, target_peer: TargetPeer, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
+pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_id: PeerId, requested_key: Key, current_block_id: BlockId, entry: Entry, target_peer: TargetPeer, queued_actions: &mut QueuedActions, block_map: &mut BlockMap, channel: ResponseChannel<GenericResponse>) -> Result<(), Box<dyn Error>> {
     let search_result = block_map.local_search(&requested_key, current_block_id);
     match search_result {
         // Found a local leaf block
@@ -205,7 +216,8 @@ pub async fn handle_request_remote_lease_search(client: &mut Client, _requester_
             Ok(())
         },
         LocalSearchResult::UnavailableBlock(unavailable_block_id) => {
-            // Will be implemented after gossipsub
+            let action = SearchBlock::new(unavailable_block_id, requested_key, entry, target_peer, channel);
+            queued_actions.queue(Box::new(action));
             Ok(())
         }
     }

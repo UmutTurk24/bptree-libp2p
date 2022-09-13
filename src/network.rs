@@ -589,21 +589,6 @@ impl EventLoop {
                     .send_response(channel, GenericResponse(lease_response))
                     .expect("Connection to peer to be still open.");
             }
-            // Command::RequestBlockmapSize {
-            //     provider_id,
-            //     sender,
-            // } => {
-            //     // Done
-            //     let blockmap_size_request: IncomingRequest =
-            //         IncomingRequest::RequestBlockmapSize(provider_id);
-            //     let serialize_request = serde_json::to_string(&blockmap_size_request).unwrap();
-            //     let request_id = self
-            //         .swarm
-            //         .behaviour_mut()
-            //         .request_response
-            //         .send_request(&provider_id, GenericRequest(serialize_request));
-            //     self.pending_generic_request.insert(request_id, sender);
-            // }
             Command::RespondBlockmapSize {
                 blockmap_size,
                 sender_id,
@@ -725,7 +710,8 @@ impl EventLoop {
                 self.swarm
                     .behaviour_mut()
                     .gossipsub
-                    .subscribe(&topic);
+                    .subscribe(&topic)
+                    .expect("Oops");
             }   
         }
     }

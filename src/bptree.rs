@@ -275,6 +275,10 @@ impl Block{
     pub fn get_availability(&self) -> bool {
         self.availability
     }
+
+    pub fn set_availability(&mut self, stage: bool) {
+        self.availability = stage;
+    }
 }
 
 /// Defines BlockMap traits for the application level
